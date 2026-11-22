@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <array>
+#include <vector>
 #include "GranularEngine.h"
 
 class MortalProcessor : public juce::AudioProcessor
@@ -65,6 +66,7 @@ private:
     std::atomic<float>* outGain = nullptr;
     std::atomic<float>* reverbAmt = nullptr;
     std::atomic<float>* lowEqOn = nullptr;
+    std::atomic<float>* delayAmt = nullptr;
     std::atomic<float>* satAmt = nullptr;
 
     GranularEngine engine;
@@ -79,6 +81,13 @@ private:
     float hpCoef = 0.0f;
     float hpX1[2] { 0.0f, 0.0f };
     float hpY1[2] { 0.0f, 0.0f };
+
+    // Delay corto y calido: linea de retardo con filtro paso bajo en la realimentacion
+    std::vector<float> dLine[2];
+    int dIdx = 0;
+    int dSamples = 1;
+    float dLpCoef = 0.0f;
+    float dLpState[2] { 0.0f, 0.0f };
 
     double sampleRate = 44100.0;
     double lfoPhase = 0.0;

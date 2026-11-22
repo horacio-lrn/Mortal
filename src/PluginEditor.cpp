@@ -3,30 +3,27 @@
 MortalEditor::MortalEditor (MortalProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    setSize (900, 770);
-
-    auto& rnd = juce::Random::getSystemRandom();
-    for (auto& s : seeds) s = rnd.nextFloat();
+    setSize (1000, 770);
 
     // Columna izquierda
-    addKnob ("position", "POSITION", 170, 120, 72);
-    addKnob ("size",     "DURATION", 170, 238, 72);
-    addKnob ("spray",    "SPRAY",    170, 356, 72);
+    addKnob ("position", "POSITION",   170, 120, 72);
+    addKnob ("size",     "DURATION",   170, 238, 72);
+    addKnob ("spray",    "SPRAY",      170, 356, 72);
     addKnob ("durrnd",   "DUR RANDOM", 170, 474, 60);
 
     // Columna derecha
-    addKnob ("density",  "DENSITY",  730, 120, 72);
-    addKnob ("pitch",    "PITCH",    730, 238, 72);
-    addKnob ("feedback", "FEEDBACK", 730, 356, 72);
+    addKnob ("density",  "DENSITY",  830, 120, 72);
+    addKnob ("pitch",    "PITCH",    830, 238, 72);
+    addKnob ("feedback", "FEEDBACK", 830, 356, 72);
 
     // Centro
-    addKnob ("mix", "MIX", 450, 356, 84);
+    addKnob ("mix", "MIX", 500, 356, 84);
 
     // Entrada y salida, en los bordes, con medidores a su lado
     addKnob ("ingain",  "IN",  72,  240, 60, true);
-    addKnob ("outgain", "OUT", 828, 240, 60, true);
+    addKnob ("outgain", "OUT", 928, 240, 60, true);
     inMeter.setBounds (12, 120, 16, 280);
-    outMeter.setBounds (872, 120, 16, 280);
+    outMeter.setBounds (972, 120, 16, 280);
     addAndMakeVisible (inMeter);
     addAndMakeVisible (outMeter);
 
@@ -36,7 +33,7 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     randomBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff2b2b));
     randomBtn.setColour (juce::TextButton::textColourOffId,  juce::Colours::white);
     randomBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    randomBtn.setBounds (370, 446, 160, 24);
+    randomBtn.setBounds (420, 446, 160, 24);
     addAndMakeVisible (randomBtn);
     randomBtn.onClick = [this] { randomizeAll(); };
 
@@ -45,13 +42,14 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     resetBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff6a2a2a));
     resetBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffffb3b3));
     resetBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    resetBtn.setBounds (370, 478, 160, 24);
+    resetBtn.setBounds (420, 478, 160, 24);
     addAndMakeVisible (resetBtn);
     resetBtn.onClick = [this] { resetAll(); };
 
-    // Faders de reverb y saturacion
-    addFader ("reverb", "REVERB",     730, 560, 130);
-    addFader ("sat",    "SATURATION", 840, 560, 130);
+    // Faders de efectos: delay, reverb y saturacion
+    addFader ("delay",  "DELAY",      700, 560, 130);
+    addFader ("reverb", "REVERB",     800, 560, 130);
+    addFader ("sat",    "SATURATION", 900, 560, 130);
 
     lowEqBtn.setButtonText ("LOW EQ");
     lowEqBtn.setClickingTogglesState (true);
@@ -59,7 +57,7 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     lowEqBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff2b2b));
     lowEqBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffffb3b3));
     lowEqBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    lowEqBtn.setBounds (700, 732, 60, 22);
+    lowEqBtn.setBounds (770, 732, 60, 22);
     addAndMakeVisible (lowEqBtn);
     lowEqAttach = std::make_unique<ButtonAttachment> (processor.apvts, "loweq", lowEqBtn);
 
@@ -104,7 +102,7 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     targetBox.setColour (juce::ComboBox::textColourId,       juce::Colour (0xffffb3b3));
     targetBox.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0xff8c1111));
     targetBox.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffff2b2b));
-    targetBox.setBounds (500, 718, 160, 24);
+    targetBox.setBounds (480, 718, 150, 24);
     addAndMakeVisible (targetBox);
     targetAttach = std::make_unique<ComboAttachment> (processor.apvts, "lfotarget", targetBox);
 
@@ -112,7 +110,7 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     targetLabel.setJustificationType (juce::Justification::centred);
     targetLabel.setFont (juce::Font (12.0f, juce::Font::bold));
     targetLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
-    targetLabel.setBounds (500, 700, 160, 16);
+    targetLabel.setBounds (480, 700, 150, 16);
     addAndMakeVisible (targetLabel);
 
     startTimerHz (30);
@@ -142,6 +140,7 @@ void MortalEditor::addKnob (const juce::String& paramID, const juce::String& tex
         {
             return t.retainCharacters ("0123456789.").getDoubleValue() / 100.0;
         };
+        lockedSliders.add (s);
     }
     else
     {
@@ -170,9 +169,6 @@ void MortalEditor::addKnob (const juce::String& paramID, const juce::String& tex
     addAndMakeVisible (l);
 
     attachments.push_back (std::make_unique<SliderAttachment> (processor.apvts, paramID, *s));
-
-    if (paramID == "ingain")  inSlider = s;
-    if (paramID == "outgain") outSlider = s;
 }
 
 void MortalEditor::addFader (const juce::String& paramID, const juce::String& text,
@@ -192,6 +188,9 @@ void MortalEditor::addFader (const juce::String& paramID, const juce::String& te
         return t.retainCharacters ("0123456789.").getDoubleValue() / 100.0;
     };
 
+    // Los efectos no se tocan con RANDOMIZE
+    lockedSliders.add (s);
+
     s->setLookAndFeel (&laf);
     s->setBounds (cx - 30, top, 60, height + 18);
     addAndMakeVisible (s);
@@ -210,10 +209,10 @@ void MortalEditor::randomizeAll()
 {
     auto& r = juce::Random::getSystemRandom();
 
-    // Knobs y faders: todos menos la entrada y la salida
+    // Knobs: todos menos entrada, salida y efectos
     for (auto* s : sliders)
     {
-        if (s == inSlider || s == outSlider) continue;
+        if (lockedSliders.contains (s)) continue;
         const auto range = s->getRange();
         s->setValue (range.getStart() + r.nextDouble() * (range.getEnd() - range.getStart()),
                      juce::sendNotificationSync);
@@ -245,46 +244,89 @@ void MortalEditor::resetAll()
     presetBox.setSelectedId (1, juce::dontSendNotification); // Sine
 }
 
-void MortalEditor::drawSphere (juce::Graphics& g, juce::Point<float> c, float r, float act) const
+void MortalEditor::drawDevil (juce::Graphics& g, juce::Point<float> c, float r, float act) const
 {
-    const juce::Colour hot (0xffff2b2b);
+    const juce::Colour red (0xffff2b2b);
 
+    // Halo que reacciona a la actividad
     for (int i = 0; i < 5; ++i)
     {
-        const float rr = r + 6.0f + (float) i * 6.0f;
-        g.setColour (hot.withAlpha ((0.14f - 0.024f * (float) i) * (0.4f + act)));
+        const float rr = r * 1.2f + (float) i * r * 0.12f;
+        g.setColour (red.withAlpha ((0.16f - 0.025f * (float) i) * (0.4f + act)));
         g.fillEllipse (c.x - rr, c.y - rr, rr * 2.0f, rr * 2.0f);
     }
 
-    juce::Path clip;
-    clip.addEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
+    // Transformaciones: normal y espejo horizontal (para el lado derecho)
+    const juce::AffineTransform T = juce::AffineTransform::translation (c.x, c.y);
+    const juce::AffineTransform M (-1.0f, 0.0f, c.x, 0.0f, 1.0f, c.y);
 
-    g.saveState();
-    g.reduceClipRegion (clip);
+    // Cuernos
+    juce::Path horn;
+    horn.startNewSubPath (-0.5f * r, -0.72f * r);
+    horn.quadraticTo (-0.95f * r, -0.9f * r, -1.05f * r, -1.45f * r);
+    horn.quadraticTo (-0.8f * r, -1.0f * r, -0.22f * r, -0.62f * r);
+    horn.closeSubPath();
 
-    juce::ColourGradient base (juce::Colour (0xffff2b2b).withAlpha (0.6f + 0.4f * act), c.x, c.y,
-                               juce::Colour (0xff2a0c0c), c.x, c.y - r, true);
-    g.setGradientFill (base);
-    g.fillEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
+    g.setColour (juce::Colour (0xff3a0a0a));
+    g.fillPath (horn, T);
+    g.fillPath (horn, M);
+    g.setColour (red.withAlpha (0.8f));
+    g.strokePath (horn, juce::PathStrokeType (1.5f), T);
+    g.strokePath (horn, juce::PathStrokeType (1.5f), M);
 
-    for (int k = 0; k < (int) seeds.size(); ++k)
-    {
-        const float a = seeds[(size_t) k] * juce::MathConstants<float>::twoPi + std::sin (phase * 0.7f + (float) k) * 0.15f;
-        const float len = r * (0.3f + 0.7f * seeds[(size_t) ((k + 7) % (int) seeds.size())]);
+    // Cabeza
+    juce::Path head;
+    head.startNewSubPath (0.0f, -0.85f * r);
+    head.cubicTo (0.55f * r, -0.95f * r, 0.95f * r, -0.55f * r, 0.9f * r, -0.05f * r);
+    head.cubicTo (0.85f * r, 0.5f * r, 0.45f * r, 0.85f * r, 0.0f, 0.95f * r);
+    head.cubicTo (-0.45f * r, 0.85f * r, -0.85f * r, 0.5f * r, -0.9f * r, -0.05f * r);
+    head.cubicTo (-0.95f * r, -0.55f * r, -0.55f * r, -0.95f * r, 0.0f, -0.85f * r);
+    head.closeSubPath();
 
-        juce::Path crack;
-        crack.startNewSubPath (c.x + std::cos (a) * r * 0.1f, c.y + std::sin (a) * r * 0.1f);
-        crack.quadraticTo (c.x + std::cos (a + 0.3f) * len * 0.5f, c.y + std::sin (a + 0.3f) * len * 0.5f,
-                           c.x + std::cos (a + 0.1f) * len, c.y + std::sin (a + 0.1f) * len);
-
-        g.setColour (juce::Colour (0xffff7070).withAlpha (0.35f + 0.5f * act));
-        g.strokePath (crack, juce::PathStrokeType (1.2f + 1.5f * act));
-    }
-
-    g.restoreState();
-
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff8a1414), c.x, c.y - r,
+                                             juce::Colour (0xff2a0606), c.x, c.y + r, false));
+    g.fillPath (head, T);
     g.setColour (juce::Colour (0xff120404));
-    g.drawEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f, 2.0f);
+    g.strokePath (head, juce::PathStrokeType (2.0f), T);
+
+    // Cejas angulosas
+    juce::Path brow;
+    brow.startNewSubPath (-0.72f * r, -0.42f * r);
+    brow.lineTo (-0.12f * r, -0.28f * r);
+    g.setColour (juce::Colour (0xff1a0303));
+    g.strokePath (brow, juce::PathStrokeType (0.09f * r), T);
+    g.strokePath (brow, juce::PathStrokeType (0.09f * r), M);
+
+    // Ojos: almendras brillantes que parpadean con la actividad
+    juce::Path eye;
+    eye.startNewSubPath (-0.6f * r, -0.3f * r);
+    eye.quadraticTo (-0.4f * r, -0.45f * r, -0.15f * r, -0.15f * r);
+    eye.quadraticTo (-0.4f * r, -0.2f * r, -0.6f * r, -0.3f * r);
+    eye.closeSubPath();
+
+    const float flicker = 0.85f + 0.15f * std::sin (phase * 5.0f);
+    g.setColour (juce::Colour (0xffffa020).withAlpha (juce::jlimit (0.0f, 1.0f, (0.6f + 0.4f * act) * flicker)));
+    g.fillPath (eye, T);
+    g.fillPath (eye, M);
+    g.setColour (juce::Colour (0xffffe080).withAlpha (0.4f + 0.6f * act));
+    g.strokePath (eye, juce::PathStrokeType (1.0f), T);
+    g.strokePath (eye, juce::PathStrokeType (1.0f), M);
+
+    // Boca con colmillos
+    juce::Path mouth;
+    mouth.startNewSubPath (-0.5f * r, 0.35f * r);
+    mouth.quadraticTo (0.0f, 0.7f * r, 0.5f * r, 0.35f * r);
+    g.setColour (juce::Colour (0xff120202));
+    g.strokePath (mouth, juce::PathStrokeType (0.05f * r), T);
+
+    juce::Path fang;
+    fang.startNewSubPath (-0.36f * r, 0.5f * r);
+    fang.lineTo (-0.27f * r, 0.76f * r);
+    fang.lineTo (-0.17f * r, 0.56f * r);
+    fang.closeSubPath();
+    g.setColour (juce::Colour (0xfffff0e0));
+    g.fillPath (fang, T);
+    g.fillPath (fang, M);
 }
 
 void MortalEditor::paint (juce::Graphics& g)
@@ -304,6 +346,6 @@ void MortalEditor::paint (juce::Graphics& g)
     g.drawText ("GRANULAR FX", juce::Rectangle<int> (0, 58, getWidth(), 16), juce::Justification::centred);
 
     const float act = juce::jlimit (0.0f, 1.0f, processor.getActivity() * 1.5f);
-    const auto centre = sphereArea.toFloat().getCentre();
-    drawSphere (g, centre, 92.0f, act);
+    const auto centre = devilArea.toFloat().getCentre();
+    drawDevil (g, centre, 80.0f, act);
 }

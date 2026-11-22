@@ -1,6 +1,5 @@
 #pragma once
 #include <JuceHeader.h>
-#include <array>
 #include "PluginProcessor.h"
 #include "LfoShapeEditor.h"
 #include "LevelMeter.h"
@@ -62,17 +61,14 @@ public:
         const float top = (float) y;
         const float bottom = (float) (y + h);
 
-        // Pista
         juce::Rectangle<float> track (cx - 3.0f, top, 6.0f, bottom - top);
         g.setColour (juce::Colour (0xff1a0d0d));
         g.fillRoundedRectangle (track, 3.0f);
 
-        // Relleno desde abajo hasta el pulgar
         juce::Rectangle<float> fill (cx - 3.0f, sliderPos, 6.0f, bottom - sliderPos);
         g.setColour (red.withAlpha (0.45f));
         g.fillRoundedRectangle (fill, 3.0f);
 
-        // Pulgar
         juce::Rectangle<float> thumb (cx - 12.0f, sliderPos - 6.0f, 24.0f, 12.0f);
         g.setColour (juce::Colour (0xff3a1818));
         g.fillRoundedRectangle (thumb, 3.0f);
@@ -99,7 +95,7 @@ private:
     void timerCallback() override
     {
         phase += 0.03f;
-        repaint (sphereArea);
+        repaint (devilArea);
         shapeEditor.repaint();
         inMeter.tick();
         outMeter.tick();
@@ -109,7 +105,7 @@ private:
                   int cx, int cy, int size, bool isGain = false);
     void addFader (const juce::String& paramID, const juce::String& text,
                    int cx, int top, int height);
-    void drawSphere (juce::Graphics& g, juce::Point<float> centre, float radius, float act) const;
+    void drawDevil (juce::Graphics& g, juce::Point<float> centre, float r, float act) const;
     void randomizeAll();
     void resetAll();
 
@@ -118,8 +114,9 @@ private:
     juce::OwnedArray<juce::Slider> sliders;
     juce::OwnedArray<juce::Label> labels;
     std::vector<std::unique_ptr<SliderAttachment>> attachments;
-    juce::Slider* inSlider = nullptr;
-    juce::Slider* outSlider = nullptr;
+
+    // Sliders que el randomizador no toca: entrada, salida y todo el bloque de efectos
+    juce::Array<juce::Slider*> lockedSliders;
 
     juce::ComboBox targetBox;
     juce::Label targetLabel;
@@ -136,8 +133,7 @@ private:
     LevelMeter outMeter { processor.getOutputLevel() };
     LfoShapeEditor shapeEditor { processor };
 
-    juce::Rectangle<int> sphereArea { 350, 100, 200, 200 };
-    std::array<float, 40> seeds {};
+    juce::Rectangle<int> devilArea { 400, 115, 200, 200 };
     float phase = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MortalEditor)

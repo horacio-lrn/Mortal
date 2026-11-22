@@ -24,6 +24,7 @@ MortalProcessor::MortalProcessor()
     outGain   = apvts.getRawParameterValue ("outgain");
     reverbAmt = apvts.getRawParameterValue ("reverb");
     lowEqOn   = apvts.getRawParameterValue ("loweq");
+    delayAmt  = apvts.getRawParameterValue ("delay");
     satAmt    = apvts.getRawParameterValue ("sat");
 
     resetShape();
@@ -67,6 +68,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout MortalProcessor::createLayou
         juce::ParameterID { "reverb", 1 }, "Large Plate Reverb", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
     params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "loweq", 1 }, "Reverb Low EQ", false));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "delay", 1 }, "Warm Delay", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "sat", 1 }, "Saturation", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
@@ -106,13 +109,14 @@ void MortalProcessor::prepareToPlay (double sr, int samplesPerBlock)
     sampleRate = sr;
     engine.prepare (sr);
 
+    // Reverb de placa grande, mas contenida
     reverb.setSampleRate (sr);
     juce::Reverb::Parameters rp;
-    rp.roomSize = 0.9f;    // placa grande
-    rp.damping  = 0.25f;   // brillante, como una placa
-    rp.width    = 1.0f;
-    rp.wetLevel = 1.0f;
-    rp.dryLevel = 0.0f;
+    rp.roomSize   = 0.8f;
+    rp.damping    = 0.3f;
+    rp.width      = 0.8f;
+    rp.wetLevel   = 1.0f;
+    rp.dryLevel   = 0.0f;
     rp.freezeMode = 0.0f;
     reverb.setParameters (rp);
     reverb.reset();
@@ -125,6 +129,15 @@ void MortalProcessor::prepareToPlay (double sr, int samplesPerBlock)
     const double dt = 1.0 / sr;
     hpCoef = (float) (rc / (rc + dt));
     hpX1[0] = hpX1[1] = hpY1[0] = hpY1[1] = 0.0f;
+
+    // Delay: 120 ms, linea de hasta 500 ms
+    const int lineSize = (int) (sr * 0.5) + 2;
+    for (auto& line : dLine)
+        line.assign ((size_t) lineSize, 0.0f);
+    dIdx = 0;
+    dSamples = (int) (0.12 * sr);
+    dLpCoef = (float) (1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 2000.0 / sr));
+    dLpState[0] = dLpState[1] = 0.0f;
 }
 
 void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -168,8 +181,8 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     engine.setParams (p);
     engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), n);
 
-    // Reverb de placa grande, con filtro LOW EQ opcional sobre la cola
-    const float revLevel = reverbAmt->load();
+    // Reverb de placa grande (mas sutil), con LOW EQ opcional sobre la cola
+    const float revLevel = reverbAmt->load() * 0.35f;
     if (revLevel > 0.0001f)
     {
         if (revBuf.getNumSamples() < n)
@@ -200,6 +213,34 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
         buffer.addFrom (0, 0, revBuf, 0, 0, n, revLevel);
         buffer.addFrom (1, 0, revBuf, 1, 0, n, revLevel);
+    }
+
+    // Delay corto y calido: el repetido pasa por un paso bajo y se realimenta suavemente
+    {
+        const float dLvl = delayAmt->load();
+        const int lineSize = (int) dLine[0].size();
+        float* w0 = buffer.getWritePointer (0);
+        float* w1 = buffer.getWritePointer (1);
+
+        for (int i = 0; i < n; ++i)
+        {
+            const int rd = (dIdx - dSamples + lineSize) % lineSize;
+
+            const float d0 = dLine[0][(size_t) rd];
+            const float d1 = dLine[1][(size_t) rd];
+            dLpState[0] += dLpCoef * (d0 - dLpState[0]);
+            dLpState[1] += dLpCoef * (d1 - dLpState[1]);
+
+            const float x0 = w0[i];
+            const float x1 = w1[i];
+            w0[i] = x0 + d0 * dLvl * 0.6f;
+            w1[i] = x1 + d1 * dLvl * 0.6f;
+
+            dLine[0][(size_t) dIdx] = x0 + dLpState[0] * 0.35f;
+            dLine[1][(size_t) dIdx] = x1 + dLpState[1] * 0.35f;
+
+            dIdx = (dIdx + 1) % lineSize;
+        }
     }
 
     // Saturador: mezcla entre la senal limpia y una version con tanh normalizada
