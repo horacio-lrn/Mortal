@@ -62,7 +62,7 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     lowEqAttach = std::make_unique<ButtonAttachment> (processor.apvts, "loweq", lowEqBtn);
 
     // Seccion LFO: presets, dibujo y controles
-    shapeLabel.setText ("LFO SHAPE (dibuja aqui)", juce::dontSendNotification);
+    shapeLabel.setText ("LFO SHAPE (dibuixa aqui)", juce::dontSendNotification);
     shapeLabel.setFont (juce::Font (12.0f, juce::Font::bold));
     shapeLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
     shapeLabel.setBounds (30, 540, 260, 14);
@@ -113,10 +113,35 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     targetLabel.setBounds (480, 700, 150, 16);
     addAndMakeVisible (targetLabel);
 
-    // Seccion DRUGS: tres knobs de 1 a 100 %, fuera del randomizador
+    // Boton para mostrar u ocultar el panel DRUGS
+    drugsBtn.setButtonText ("DRUGS");
+    drugsBtn.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff3a1a1a));
+    drugsBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff2b2b));
+    drugsBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffff2b2b));
+    drugsBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
+    drugsBtn.setBounds (420, 780, 160, 24);
+    addAndMakeVisible (drugsBtn);
+    drugsBtn.onClick = [this]
+    {
+        drugsVisible = ! drugsVisible;
+        for (auto* c : drugComps)
+            c->setVisible (drugsVisible);
+        repaint();
+    };
+
+    // Seccion DRUGS: tres knobs de 1 a 100 %, fuera del randomizador y ocultos al inicio
     addKnob ("lsd",      "LSD",      250, 840, 64, false, true);
+    drugComps.add (sliders.getLast());
+    drugComps.add (labels.getLast());
     addKnob ("ketamine", "KETAMINE", 500, 840, 64, false, true);
+    drugComps.add (sliders.getLast());
+    drugComps.add (labels.getLast());
     addKnob ("cocaine",  "COCAINE",  750, 840, 64, false, true);
+    drugComps.add (sliders.getLast());
+    drugComps.add (labels.getLast());
+
+    for (auto* c : drugComps)
+        c->setVisible (false);
 
     startTimerHz (30);
 }
@@ -352,18 +377,29 @@ void MortalEditor::paint (juce::Graphics& g)
     g.setFont (juce::Font (12.0f, juce::Font::plain));
     g.drawText ("GRANULAR FX", juce::Rectangle<int> (0, 58, getWidth(), 16), juce::Justification::centred);
 
+    // Textos de la esquina superior derecha
+    g.setColour (juce::Colour (0xffb06060));
+    g.setFont (juce::Font (11.0f, juce::Font::plain));
+    g.drawText ("alabeu al hippie mal vestit",
+                juce::Rectangle<int> (480, 10, getWidth() - 490, 14), juce::Justification::right);
+    g.drawText ("distribuiu aquest plugin amb seny, que de cervell no en venen",
+                juce::Rectangle<int> (480, 26, getWidth() - 490, 14), juce::Justification::right);
+
+    // Texto de la esquina inferior derecha
+    g.drawText ("Ningu es fa responsable d'aquest plugin",
+                juce::Rectangle<int> (480, 912, getWidth() - 490, 14), juce::Justification::right);
+
     const float act = juce::jlimit (0.0f, 1.0f, processor.getActivity() * 1.5f);
     const auto centre = devilArea.toFloat().getCentre();
     drawDevil (g, centre, 80.0f, act);
 
-    // Panel DRUGS
-    auto panel = juce::Rectangle<float> (20.0f, 774.0f, 960.0f, 150.0f);
-    g.setColour (juce::Colour (0x66100505));
-    g.fillRoundedRectangle (panel, 10.0f);
-    g.setColour (juce::Colour (0xff6a2a2a));
-    g.drawRoundedRectangle (panel, 10.0f, 1.0f);
-
-    g.setColour (juce::Colour (0xffff2b2b));
-    g.setFont (juce::Font (14.0f, juce::Font::bold));
-    g.drawText ("DRUGS", juce::Rectangle<int> (0, 780, getWidth(), 18), juce::Justification::centred);
+    // Panel DRUGS (solo cuando esta desplegado)
+    if (drugsVisible)
+    {
+        auto panel = juce::Rectangle<float> (20.0f, 774.0f, 960.0f, 150.0f);
+        g.setColour (juce::Colour (0x66100505));
+        g.fillRoundedRectangle (panel, 10.0f);
+        g.setColour (juce::Colour (0xff6a2a2a));
+        g.drawRoundedRectangle (panel, 10.0f, 1.0f);
+    }
 }

@@ -118,6 +118,11 @@ private:
     // Sliders que el randomizador no toca: entrada, salida, efectos y DRUGS
     juce::Array<juce::Slider*> lockedSliders;
 
+    // Componentes del panel DRUGS (se muestran u ocultan con su boton)
+    juce::Array<juce::Component*> drugComps;
+    juce::TextButton drugsBtn;
+    bool drugsVisible = false;
+
     juce::ComboBox targetBox;
     juce::Label targetLabel;
     juce::Label shapeLabel;
