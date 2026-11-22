@@ -58,6 +58,10 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
+    void processLsd (juce::AudioBuffer<float>& buffer, int n);
+    void processFreeze (juce::AudioBuffer<float>& buffer, int n);
+    void processStutter (juce::AudioBuffer<float>& buffer, int n);
+
     std::array<std::atomic<float>*, 8> raw {};
     std::atomic<float>* lfoRate = nullptr;
     std::atomic<float>* lfoDepth = nullptr;
@@ -68,6 +72,9 @@ private:
     std::atomic<float>* lowEqOn = nullptr;
     std::atomic<float>* delayAmt = nullptr;
     std::atomic<float>* satAmt = nullptr;
+    std::atomic<float>* lsdAmt = nullptr;
+    std::atomic<float>* ketAmt = nullptr;
+    std::atomic<float>* cocAmt = nullptr;
 
     GranularEngine engine;
     std::atomic<float> activity { 0.0f };
@@ -82,12 +89,33 @@ private:
     float hpX1[2] { 0.0f, 0.0f };
     float hpY1[2] { 0.0f, 0.0f };
 
-    // Delay corto y calido: linea de retardo con filtro paso bajo en la realimentacion
+    // Delay corto y calido
     std::vector<float> dLine[2];
     int dIdx = 0;
     int dSamples = 1;
     float dLpCoef = 0.0f;
     float dLpState[2] { 0.0f, 0.0f };
+
+    // LSD: pitch warp con linea de retardo modulada
+    std::vector<float> lsdBuf[2];
+    int lsdIdx = 0;
+    double lsdPh1 = 0.0, lsdPh2 = 0.0;
+
+    // KETAMINE: congelado con dos cabezales de ventana Hann desfasados
+    std::vector<float> kBuf[2];
+    int kIdx = 0;
+    bool kFrozen = false;
+    int kStart = 0;
+    int kR = 0;
+    int kLen = 1;
+
+    // COCAINE: stutter de fragmentos repetidos
+    std::vector<float> stBuf[2];
+    int stIdx = 0;
+    int stCount = 0;
+    int stSrc = 0;
+    int stPhase = 0;
+    int stFrag = 1;
 
     double sampleRate = 44100.0;
     double lfoPhase = 0.0;

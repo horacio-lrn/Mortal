@@ -26,6 +26,9 @@ MortalProcessor::MortalProcessor()
     lowEqOn   = apvts.getRawParameterValue ("loweq");
     delayAmt  = apvts.getRawParameterValue ("delay");
     satAmt    = apvts.getRawParameterValue ("sat");
+    lsdAmt    = apvts.getRawParameterValue ("lsd");
+    ketAmt    = apvts.getRawParameterValue ("ketamine");
+    cocAmt    = apvts.getRawParameterValue ("cocaine");
 
     resetShape();
 }
@@ -73,6 +76,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout MortalProcessor::createLayou
 
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "sat", 1 }, "Saturation", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "lsd", 1 }, "LSD (Pitch Warp)", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "ketamine", 1 }, "Ketamine (Freeze)", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "cocaine", 1 }, "Cocaine (Stutter)", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
     return { params.begin(), params.end() };
 }
@@ -131,13 +141,162 @@ void MortalProcessor::prepareToPlay (double sr, int samplesPerBlock)
     hpX1[0] = hpX1[1] = hpY1[0] = hpY1[1] = 0.0f;
 
     // Delay: 120 ms, linea de hasta 500 ms
-    const int lineSize = (int) (sr * 0.5) + 2;
+    const int delayLineSize = (int) (sr * 0.5) + 2;
     for (auto& line : dLine)
-        line.assign ((size_t) lineSize, 0.0f);
+        line.assign ((size_t) delayLineSize, 0.0f);
     dIdx = 0;
     dSamples = (int) (0.12 * sr);
     dLpCoef = (float) (1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 2000.0 / sr));
     dLpState[0] = dLpState[1] = 0.0f;
+
+    // Buffers de los efectos de DRUGS (2 segundos cada uno)
+    const int fxSize = (int) (sr * 2.0) + 4;
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        lsdBuf[ch].assign ((size_t) fxSize, 0.0f);
+        kBuf[ch].assign ((size_t) fxSize, 0.0f);
+        stBuf[ch].assign ((size_t) fxSize, 0.0f);
+    }
+    lsdIdx = 0;
+    lsdPh1 = lsdPh2 = 0.0;
+
+    kIdx = 0;
+    kFrozen = false;
+    kStart = 0;
+    kR = 0;
+    kLen = juce::jmax (4, (int) (sr * 0.25));
+
+    stIdx = 0;
+    stCount = 0;
+    stSrc = 0;
+    stPhase = 0;
+    stFrag = 1;
+}
+
+// LSD: la lectura de la linea de retardo se mueve con dos senos lentos.
+// La derivada de ese desplazamiento es lo que cambia el pitch, de forma ondulante.
+void MortalProcessor::processLsd (juce::AudioBuffer<float>& buffer, int n)
+{
+    const float a = lsdAmt->load();
+    const int size = (int) lsdBuf[0].size();
+    const double base = 0.03 * sampleRate;
+    const double twoPi = juce::MathConstants<double>::twoPi;
+
+    float* w[2] = { buffer.getWritePointer (0), buffer.getWritePointer (1) };
+
+    for (int i = 0; i < n; ++i)
+    {
+        lsdPh1 = std::fmod (lsdPh1 + twoPi * 0.7 / sampleRate, twoPi);
+        lsdPh2 = std::fmod (lsdPh2 + twoPi * 2.3 / sampleRate, twoPi);
+
+        const double off = base + (double) a * (0.015 * sampleRate * std::sin (lsdPh1)
+                                              + 0.008 * sampleRate * std::sin (lsdPh2));
+
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const float x = w[ch][i];
+            lsdBuf[ch][(size_t) lsdIdx] = x;
+
+            double rp = (double) lsdIdx - off;
+            while (rp < 0.0) rp += size;
+            int i0 = (int) rp % size;
+            const int i1 = (i0 + 1) % size;
+            const float fr = (float) (rp - std::floor (rp));
+
+            const float b0 = lsdBuf[ch][(size_t) i0];
+            const float b1 = lsdBuf[ch][(size_t) i1];
+            const float wet = b0 + (b1 - b0) * fr;
+
+            w[ch][i] = x * (1.0f - a) + wet * a;
+        }
+
+        lsdIdx = (lsdIdx + 1) % size;
+    }
+}
+
+// KETAMINE: al activarse congela los ultimos 250 ms y los repite con dos cabezales
+// de ventana Hann desfasados medio ciclo. La suma de ventanas es 1, asi que no hay saltos.
+void MortalProcessor::processFreeze (juce::AudioBuffer<float>& buffer, int n)
+{
+    const float a = ketAmt->load();
+    const bool want = a > 0.0001f;
+    const int size = (int) kBuf[0].size();
+
+    if (want && ! kFrozen)
+    {
+        kFrozen = true;
+        kStart = (kIdx - kLen + size) % size;
+        kR = 0;
+    }
+    if (! want)
+        kFrozen = false;
+
+    const int half = kLen / 2;
+    float* w[2] = { buffer.getWritePointer (0), buffer.getWritePointer (1) };
+    const float twoPiF = juce::MathConstants<float>::twoPi;
+
+    for (int i = 0; i < n; ++i)
+    {
+        const float xs[2] = { w[0][i], w[1][i] };
+
+        if (kFrozen)
+        {
+            const int r2 = (kR + half) % kLen;
+            const float win1 = 0.5f - 0.5f * std::cos (twoPiF * (float) kR / (float) kLen);
+            const float win2 = 0.5f - 0.5f * std::cos (twoPiF * (float) r2 / (float) kLen);
+
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const float y = kBuf[ch][(size_t) ((kStart + kR) % size)] * win1
+                              + kBuf[ch][(size_t) ((kStart + r2) % size)] * win2;
+                w[ch][i] = xs[ch] * (1.0f - a) + y * a;
+            }
+
+            kR = (kR + 1) % kLen;
+        }
+        else
+        {
+            for (int ch = 0; ch < 2; ++ch)
+                kBuf[ch][(size_t) kIdx] = xs[ch];
+
+            kIdx = (kIdx + 1) % size;
+        }
+    }
+}
+
+// COCAINE: cada corte repite un fragmento corto del audio reciente, de forma ritmica.
+void MortalProcessor::processStutter (juce::AudioBuffer<float>& buffer, int n)
+{
+    const float a = cocAmt->load();
+    const int size = (int) stBuf[0].size();
+    float* w[2] = { buffer.getWritePointer (0), buffer.getWritePointer (1) };
+
+    for (int i = 0; i < n; ++i)
+    {
+        if (stCount <= 0)
+        {
+            // Mas amount = cortes mas cortos y mas frecuentes
+            const int sliceLen = juce::jmax (8, (int) (sampleRate * (0.24 - 0.18 * (double) a)));
+            stCount = sliceLen;
+            stFrag = juce::jmax (1, sliceLen / 4);
+            stSrc = (stIdx - sliceLen + size) % size;
+            stPhase = 0;
+        }
+
+        const int src = (stSrc + (stPhase % stFrag)) % size;
+
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const float x = w[ch][i];
+            stBuf[ch][(size_t) stIdx] = x;
+            if (a > 0.0001f)
+                w[ch][i] = x * (1.0f - a) + stBuf[ch][(size_t) src] * a;
+        }
+
+        stIdx = (stIdx + 1) % size;
+        stPhase++;
+        stCount--;
+    }
 }
 
 void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -181,6 +340,11 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     engine.setParams (p);
     engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), n);
 
+    // DRUGS: LSD, luego KETAMINE y COCAINE
+    processLsd (buffer, n);
+    processFreeze (buffer, n);
+    processStutter (buffer, n);
+
     // Reverb de placa grande (mas sutil), con LOW EQ opcional sobre la cola
     const float revLevel = reverbAmt->load() * 0.35f;
     if (revLevel > 0.0001f)
@@ -215,7 +379,7 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         buffer.addFrom (1, 0, revBuf, 1, 0, n, revLevel);
     }
 
-    // Delay corto y calido: el repetido pasa por un paso bajo y se realimenta suavemente
+    // Delay corto y calido
     {
         const float dLvl = delayAmt->load();
         const int lineSize = (int) dLine[0].size();

@@ -102,7 +102,7 @@ private:
     }
 
     void addKnob (const juce::String& paramID, const juce::String& text,
-                  int cx, int cy, int size, bool isGain = false);
+                  int cx, int cy, int size, bool isGain = false, bool locked = false);
     void addFader (const juce::String& paramID, const juce::String& text,
                    int cx, int top, int height);
     void drawDevil (juce::Graphics& g, juce::Point<float> centre, float r, float act) const;
@@ -115,7 +115,7 @@ private:
     juce::OwnedArray<juce::Label> labels;
     std::vector<std::unique_ptr<SliderAttachment>> attachments;
 
-    // Sliders que el randomizador no toca: entrada, salida y todo el bloque de efectos
+    // Sliders que el randomizador no toca: entrada, salida, efectos y DRUGS
     juce::Array<juce::Slider*> lockedSliders;
 
     juce::ComboBox targetBox;

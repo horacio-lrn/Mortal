@@ -3,7 +3,7 @@
 MortalEditor::MortalEditor (MortalProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    setSize (1000, 770);
+    setSize (1000, 930);
 
     // Columna izquierda
     addKnob ("position", "POSITION",   170, 120, 72);
@@ -113,6 +113,11 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     targetLabel.setBounds (480, 700, 150, 16);
     addAndMakeVisible (targetLabel);
 
+    // Seccion DRUGS: tres knobs de 1 a 100 %, fuera del randomizador
+    addKnob ("lsd",      "LSD",      250, 840, 64, false, true);
+    addKnob ("ketamine", "KETAMINE", 500, 840, 64, false, true);
+    addKnob ("cocaine",  "COCAINE",  750, 840, 64, false, true);
+
     startTimerHz (30);
 }
 
@@ -123,7 +128,7 @@ MortalEditor::~MortalEditor()
 }
 
 void MortalEditor::addKnob (const juce::String& paramID, const juce::String& text,
-                            int cx, int cy, int size, bool isGain)
+                            int cx, int cy, int size, bool isGain, bool locked)
 {
     auto* s = sliders.add (new juce::Slider());
     s->setSliderStyle (juce::Slider::RotaryVerticalDrag);
@@ -140,7 +145,6 @@ void MortalEditor::addKnob (const juce::String& paramID, const juce::String& tex
         {
             return t.retainCharacters ("0123456789.").getDoubleValue() / 100.0;
         };
-        lockedSliders.add (s);
     }
     else
     {
@@ -156,6 +160,9 @@ void MortalEditor::addKnob (const juce::String& paramID, const juce::String& tex
             return s->proportionOfLengthToValue ((pct - 1.0) / 99.0);
         };
     }
+
+    if (isGain || locked)
+        lockedSliders.add (s);
 
     s->setLookAndFeel (&laf);
     s->setBounds (cx - size / 2, cy - size / 2, size, size + 18);
@@ -209,7 +216,7 @@ void MortalEditor::randomizeAll()
 {
     auto& r = juce::Random::getSystemRandom();
 
-    // Knobs: todos menos entrada, salida y efectos
+    // Knobs: todos menos entrada, salida, efectos y DRUGS
     for (auto* s : sliders)
     {
         if (lockedSliders.contains (s)) continue;
@@ -348,4 +355,15 @@ void MortalEditor::paint (juce::Graphics& g)
     const float act = juce::jlimit (0.0f, 1.0f, processor.getActivity() * 1.5f);
     const auto centre = devilArea.toFloat().getCentre();
     drawDevil (g, centre, 80.0f, act);
+
+    // Panel DRUGS
+    auto panel = juce::Rectangle<float> (20.0f, 774.0f, 960.0f, 150.0f);
+    g.setColour (juce::Colour (0x66100505));
+    g.fillRoundedRectangle (panel, 10.0f);
+    g.setColour (juce::Colour (0xff6a2a2a));
+    g.drawRoundedRectangle (panel, 10.0f, 1.0f);
+
+    g.setColour (juce::Colour (0xffff2b2b));
+    g.setFont (juce::Font (14.0f, juce::Font::bold));
+    g.drawText ("DRUGS", juce::Rectangle<int> (0, 780, getWidth(), 18), juce::Justification::centred);
 }
