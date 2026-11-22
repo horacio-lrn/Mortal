@@ -3,30 +3,32 @@
 MortalEditor::MortalEditor (MortalProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    setSize (760, 730);
+    setSize (900, 770);
 
     auto& rnd = juce::Random::getSystemRandom();
     for (auto& s : seeds) s = rnd.nextFloat();
 
-    // Fila superior
-    addKnob ("position", "POSITION", 110, 120, 72);
-    addKnob ("density",  "DENSITY",  650, 120, 72);
+    // Columna izquierda
+    addKnob ("position", "POSITION", 170, 120, 72);
+    addKnob ("size",     "DURATION", 170, 238, 72);
+    addKnob ("spray",    "SPRAY",    170, 356, 72);
+    addKnob ("durrnd",   "DUR RANDOM", 170, 474, 60);
 
-    // Fila media
-    addKnob ("size",     "DURATION", 110, 238, 72);
-    addKnob ("pitch",    "PITCH",    650, 238, 72);
-
-    // Fila inferior de columnas laterales
-    addKnob ("spray",    "SPRAY",    110, 356, 72);
-    addKnob ("feedback", "FEEDBACK", 650, 356, 72);
-    addKnob ("durrnd",   "DUR RANDOM", 110, 474, 60);
+    // Columna derecha
+    addKnob ("density",  "DENSITY",  730, 120, 72);
+    addKnob ("pitch",    "PITCH",    730, 238, 72);
+    addKnob ("feedback", "FEEDBACK", 730, 356, 72);
 
     // Centro
-    addKnob ("mix", "MIX", 380, 356, 84);
+    addKnob ("mix", "MIX", 450, 356, 84);
 
-    // Entrada y salida, en los bordes laterales
-    addKnob ("ingain",  "IN",  44, 238, 60, true);
-    addKnob ("outgain", "OUT", 716, 238, 60, true);
+    // Entrada y salida, en los bordes, con medidores a su lado
+    addKnob ("ingain",  "IN",  72,  240, 60, true);
+    addKnob ("outgain", "OUT", 828, 240, 60, true);
+    inMeter.setBounds (12, 120, 16, 280);
+    outMeter.setBounds (872, 120, 16, 280);
+    addAndMakeVisible (inMeter);
+    addAndMakeVisible (outMeter);
 
     // Botones centrales
     randomBtn.setButtonText ("RANDOMIZE");
@@ -34,7 +36,7 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     randomBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff2b2b));
     randomBtn.setColour (juce::TextButton::textColourOffId,  juce::Colours::white);
     randomBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    randomBtn.setBounds (300, 446, 160, 24);
+    randomBtn.setBounds (370, 446, 160, 24);
     addAndMakeVisible (randomBtn);
     randomBtn.onClick = [this] { randomizeAll(); };
 
@@ -43,29 +45,66 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     resetBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff6a2a2a));
     resetBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffffb3b3));
     resetBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    resetBtn.setBounds (300, 478, 160, 24);
+    resetBtn.setBounds (370, 478, 160, 24);
     addAndMakeVisible (resetBtn);
     resetBtn.onClick = [this] { resetAll(); };
 
-    // Seccion LFO: forma dibujada + controles
+    // Faders de reverb y saturacion
+    addFader ("reverb", "REVERB",     730, 560, 130);
+    addFader ("sat",    "SATURATION", 840, 560, 130);
+
+    lowEqBtn.setButtonText ("LOW EQ");
+    lowEqBtn.setClickingTogglesState (true);
+    lowEqBtn.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff3a1a1a));
+    lowEqBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff2b2b));
+    lowEqBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffffb3b3));
+    lowEqBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
+    lowEqBtn.setBounds (700, 732, 60, 22);
+    addAndMakeVisible (lowEqBtn);
+    lowEqAttach = std::make_unique<ButtonAttachment> (processor.apvts, "loweq", lowEqBtn);
+
+    // Seccion LFO: presets, dibujo y controles
     shapeLabel.setText ("LFO SHAPE (dibuja aqui)", juce::dontSendNotification);
     shapeLabel.setFont (juce::Font (12.0f, juce::Font::bold));
     shapeLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
-    shapeLabel.setBounds (30, 548, 260, 14);
+    shapeLabel.setBounds (30, 540, 260, 14);
     addAndMakeVisible (shapeLabel);
 
-    shapeEditor.setBounds (30, 566, 430, 120);
+    presetBox.addItemList ({ "Sine", "Triangle", "Square", "Saw Up", "Saw Down", "Steps" }, 1);
+    presetBox.setTextWhenNothingSelected ("Preset...");
+    presetBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff2a1212));
+    presetBox.setColour (juce::ComboBox::textColourId,       juce::Colour (0xffffb3b3));
+    presetBox.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0xff8c1111));
+    presetBox.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffff2b2b));
+    presetBox.setBounds (30, 560, 150, 24);
+    addAndMakeVisible (presetBox);
+    presetBox.onChange = [this]
+    {
+        const int idx = presetBox.getSelectedItemIndex();
+        if (idx >= 0) processor.applyShapePreset (idx);
+    };
+
+    clearBtn.setButtonText ("CLEAR DRAW");
+    clearBtn.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff3a1a1a));
+    clearBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff6a2a2a));
+    clearBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffffb3b3));
+    clearBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
+    clearBtn.setBounds (190, 560, 120, 24);
+    addAndMakeVisible (clearBtn);
+    clearBtn.onClick = [this] { processor.clearShape(); presetBox.setSelectedId (0, juce::dontSendNotification); };
+
+    shapeEditor.setBounds (30, 592, 440, 120);
     addAndMakeVisible (shapeEditor);
 
-    addKnob ("lforate",  "LFO RATE",  520, 600, 60);
-    addKnob ("lfodepth", "LFO DEPTH", 620, 600, 60);
+    addKnob ("lforate",  "LFO RATE",  530, 620, 60);
+    addKnob ("lfodepth", "LFO DEPTH", 620, 620, 60);
 
     targetBox.addItemList ({ "Position", "Density", "Pitch", "Spray", "Mix" }, 1);
     targetBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff2a1212));
     targetBox.setColour (juce::ComboBox::textColourId,       juce::Colour (0xffffb3b3));
     targetBox.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0xff8c1111));
     targetBox.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffff2b2b));
-    targetBox.setBounds (480, 690, 160, 24);
+    targetBox.setBounds (500, 718, 160, 24);
     addAndMakeVisible (targetBox);
     targetAttach = std::make_unique<ComboAttachment> (processor.apvts, "lfotarget", targetBox);
 
@@ -73,7 +112,7 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     targetLabel.setJustificationType (juce::Justification::centred);
     targetLabel.setFont (juce::Font (12.0f, juce::Font::bold));
     targetLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
-    targetLabel.setBounds (480, 672, 160, 16);
+    targetLabel.setBounds (500, 700, 160, 16);
     addAndMakeVisible (targetLabel);
 
     startTimerHz (30);
@@ -106,7 +145,7 @@ void MortalEditor::addKnob (const juce::String& paramID, const juce::String& tex
     }
     else
     {
-        // Resto de knobs: siempre de 1 % a 100 %
+        // Knobs: siempre de 1 % a 100 %
         s->textFromValueFunction = [s] (double v)
         {
             const double proportion = s->valueToProportionOfLength (v);
@@ -136,11 +175,42 @@ void MortalEditor::addKnob (const juce::String& paramID, const juce::String& tex
     if (paramID == "outgain") outSlider = s;
 }
 
+void MortalEditor::addFader (const juce::String& paramID, const juce::String& text,
+                             int cx, int top, int height)
+{
+    auto* s = sliders.add (new juce::Slider());
+    s->setSliderStyle (juce::Slider::LinearVertical);
+    s->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 60, 16);
+    s->setColour (juce::Slider::textBoxTextColourId,       juce::Colour (0xffffb3b3));
+    s->setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+    s->setColour (juce::Slider::textBoxOutlineColourId,    juce::Colours::transparentBlack);
+
+    // Faders de 0 % a 100 %
+    s->textFromValueFunction = [] (double v) { return juce::String (juce::roundToInt (v * 100.0)) + " %"; };
+    s->valueFromTextFunction = [] (const juce::String& t)
+    {
+        return t.retainCharacters ("0123456789.").getDoubleValue() / 100.0;
+    };
+
+    s->setLookAndFeel (&laf);
+    s->setBounds (cx - 30, top, 60, height + 18);
+    addAndMakeVisible (s);
+
+    auto* l = labels.add (new juce::Label ({}, text));
+    l->setJustificationType (juce::Justification::centred);
+    l->setFont (juce::Font (12.0f, juce::Font::bold));
+    l->setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
+    l->setBounds (cx - 55, top + height + 20, 110, 16);
+    addAndMakeVisible (l);
+
+    attachments.push_back (std::make_unique<SliderAttachment> (processor.apvts, paramID, *s));
+}
+
 void MortalEditor::randomizeAll()
 {
     auto& r = juce::Random::getSystemRandom();
 
-    // Knobs: todos menos la entrada y la salida, que no se tocan
+    // Knobs y faders: todos menos la entrada y la salida
     for (auto* s : sliders)
     {
         if (s == inSlider || s == outSlider) continue;
@@ -150,6 +220,7 @@ void MortalEditor::randomizeAll()
     }
 
     targetBox.setSelectedItemIndex (r.nextInt (5), juce::sendNotificationSync);
+    presetBox.setSelectedId (0, juce::dontSendNotification);
 
     // Forma del LFO: 9 puntos aleatorios unidos por interpolacion
     float pts[9];
@@ -171,6 +242,7 @@ void MortalEditor::resetAll()
             rp->setValueNotifyingHost (rp->getDefaultValue());
 
     processor.resetShape();
+    presetBox.setSelectedId (1, juce::dontSendNotification); // Sine
 }
 
 void MortalEditor::drawSphere (juce::Graphics& g, juce::Point<float> c, float r, float act) const

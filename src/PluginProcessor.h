@@ -40,11 +40,17 @@ public:
 
     float getActivity() const noexcept { return activity.load(); }
 
-    // Forma del LFO dibujada por el usuario (0 = abajo, 1 = arriba)
+    // Forma del LFO (0 = abajo, 1 = arriba)
     float getShapeValue (int i) const noexcept { return shape[(size_t) i].load(); }
     void setShapeValue (int i, float v) noexcept { shape[(size_t) i].store (juce::jlimit (0.0f, 1.0f, v)); }
-    void resetShape() noexcept;
+    void applyShapePreset (int presetIndex) noexcept; // -1 = linea plana
+    void resetShape() noexcept;                       // sinusoide por defecto
+    void clearShape() noexcept { applyShapePreset (-1); }
     float getLfoPhase() const noexcept { return displayPhase.load(); }
+
+    // Niveles para los medidores
+    const std::atomic<float>& getInputLevel() const noexcept { return inLevel; }
+    const std::atomic<float>& getOutputLevel() const noexcept { return outLevel; }
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -57,11 +63,23 @@ private:
     std::atomic<float>* lfoTarget = nullptr;
     std::atomic<float>* inGain = nullptr;
     std::atomic<float>* outGain = nullptr;
+    std::atomic<float>* reverbAmt = nullptr;
+    std::atomic<float>* lowEqOn = nullptr;
+    std::atomic<float>* satAmt = nullptr;
 
     GranularEngine engine;
     std::atomic<float> activity { 0.0f };
     std::atomic<float> displayPhase { 0.0f };
     std::array<std::atomic<float>, shapeSize> shape;
+    std::atomic<float> inLevel { 0.0f };
+    std::atomic<float> outLevel { 0.0f };
+
+    juce::Reverb reverb;
+    juce::AudioBuffer<float> revBuf;
+    float hpCoef = 0.0f;
+    float hpX1[2] { 0.0f, 0.0f };
+    float hpY1[2] { 0.0f, 0.0f };
+
     double sampleRate = 44100.0;
     double lfoPhase = 0.0;
 
