@@ -9,7 +9,7 @@ public:
     MortalProcessor();
     ~MortalProcessor() override = default;
 
-    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+    void prepareToPlay (double sr, int samplesPerBlock) override;
     void releaseResources() override {}
 
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override
@@ -43,9 +43,15 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
-    std::array<std::atomic<float>*, 7> raw {};
+    std::array<std::atomic<float>*, 8> raw {};
+    std::atomic<float>* lfoRate = nullptr;
+    std::atomic<float>* lfoDepth = nullptr;
+    std::atomic<float>* lfoTarget = nullptr;
+
     GranularEngine engine;
     std::atomic<float> activity { 0.0f };
+    double sampleRate = 44100.0;
+    double lfoPhase = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MortalProcessor)
 };

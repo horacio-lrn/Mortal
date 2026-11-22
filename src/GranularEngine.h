@@ -7,7 +7,7 @@
 class GranularEngine
 {
 public:
-    struct Params { float position, size, density, pitch, spray, feedback, mix; };
+    struct Params { float position, size, density, pitch, spray, feedback, mix, durRnd; };
 
     void prepare (double sr)
     {
@@ -27,7 +27,7 @@ public:
     {
         if (bufferSize == 0) return;
 
-        const double grainLen = juce::jlimit (5.0, 500.0, (double) params.size) * 0.001 * sampleRate;
+        const double baseLen = juce::jlimit (5.0, 500.0, (double) params.size) * 0.001 * sampleRate;
         const double interval = sampleRate / juce::jmax (1.0, (double) params.density);
         const double ratio = std::pow (2.0, params.pitch / 12.0);
         const float minDelay = (float) (0.02 * sampleRate);
@@ -39,7 +39,7 @@ public:
         {
             if (--countdown <= 0)
             {
-                spawnGrain (grainLen, ratio, minDelay, maxDelay);
+                spawnGrain (baseLen, ratio, minDelay, maxDelay);
                 countdown += juce::jmax (1, (int) interval);
             }
 
@@ -102,7 +102,7 @@ private:
         return i;
     }
 
-    void spawnGrain (double grainLen, double ratio, float minDelay, float maxDelay)
+    void spawnGrain (double baseLen, double ratio, float minDelay, float maxDelay)
     {
         for (auto& g : grains)
         {
@@ -117,15 +117,19 @@ private:
             while (start < 0.0) start += bufferSize;
             g.readPos = start;
 
+            // Duracion propia de cada grano: la base mas una variacion aleatoria
+            const double durMul = 1.0 + (double) (rnd.nextFloat() * 2.0f - 1.0f) * (double) params.durRnd;
+            const double len = juce::jlimit (0.005 * sampleRate, 0.5 * sampleRate, baseLen * durMul);
+
             const float pan = (rnd.nextFloat() * 2.0f - 1.0f) * spray;
             const float angle = (pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
-            const double grainSec = grainLen / sampleRate;
+            const double grainSec = len / sampleRate;
             const float amp = 1.0f / std::sqrt (juce::jmax (1.0f, params.density * (float) grainSec));
 
             g.gainL = std::cos (angle) * amp;
             g.gainR = std::sin (angle) * amp;
             g.inc = ratio;
-            g.length = grainLen;
+            g.length = len;
             g.age = 0.0;
             g.active = true;
             return;
@@ -137,7 +141,7 @@ private:
     std::vector<float> bufL, bufR;
     int writeIndex = 0;
     int countdown = 0;
-    Params params { 0.5f, 80.0f, 20.0f, 0.0f, 0.1f, 0.0f, 0.5f };
+    Params params { 0.5f, 80.0f, 20.0f, 0.0f, 0.1f, 0.0f, 0.5f, 0.0f };
     std::array<Grain, maxGrains> grains {};
     float activity = 0.0f;
     juce::Random rnd;
