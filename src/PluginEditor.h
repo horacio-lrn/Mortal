@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include "PluginProcessor.h"
+#include "LfoShapeEditor.h"
 
 class MortalLookAndFeel : public juce::LookAndFeel_V4
 {
@@ -59,21 +60,35 @@ private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAttachment  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
-    void timerCallback() override { phase += 0.03f; repaint (sphereArea); }
+    void timerCallback() override
+    {
+        phase += 0.03f;
+        repaint (sphereArea);
+        shapeEditor.repaint();
+    }
+
     void addKnob (const juce::String& paramID, const juce::String& text,
-                  int cx, int cy, int size, const juce::String& suffix);
+                  int cx, int cy, int size, bool isGain = false);
     void drawSphere (juce::Graphics& g, juce::Point<float> centre, float radius, float act) const;
+    void randomizeAll();
+    void resetAll();
 
     MortalProcessor& processor;
     MortalLookAndFeel laf;
     juce::OwnedArray<juce::Slider> sliders;
     juce::OwnedArray<juce::Label> labels;
     std::vector<std::unique_ptr<SliderAttachment>> attachments;
+    juce::Slider* inSlider = nullptr;
+    juce::Slider* outSlider = nullptr;
 
     juce::ComboBox targetBox;
     juce::Label targetLabel;
+    juce::Label shapeLabel;
     juce::TextButton randomBtn;
+    juce::TextButton resetBtn;
     std::unique_ptr<ComboAttachment> targetAttach;
+
+    LfoShapeEditor shapeEditor { processor };
 
     juce::Rectangle<int> sphereArea { 280, 100, 200, 200 };
     std::array<float, 40> seeds {};

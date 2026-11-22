@@ -20,6 +20,10 @@ MortalProcessor::MortalProcessor()
     lfoRate   = apvts.getRawParameterValue ("lforate");
     lfoDepth  = apvts.getRawParameterValue ("lfodepth");
     lfoTarget = apvts.getRawParameterValue ("lfotarget");
+    inGain    = apvts.getRawParameterValue ("ingain");
+    outGain   = apvts.getRawParameterValue ("outgain");
+
+    resetShape();
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout MortalProcessor::createLayout()
@@ -51,7 +55,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout MortalProcessor::createLayou
         juce::ParameterID { "lfotarget", 1 }, "LFO Target",
         juce::StringArray { "Position", "Density", "Pitch", "Spray", "Mix" }, 0));
 
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "ingain", 1 }, "Input Gain", juce::NormalisableRange<float> (0.0f, 2.0f), 1.0f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "outgain", 1 }, "Output Gain", juce::NormalisableRange<float> (0.0f, 2.0f), 1.0f));
+
     return { params.begin(), params.end() };
+}
+
+void MortalProcessor::resetShape() noexcept
+{
+    for (int i = 0; i < shapeSize; ++i)
+        shape[(size_t) i].store (0.5f + 0.5f * std::sin (juce::MathConstants<float>::twoPi * (float) i / (float) shapeSize));
 }
 
 void MortalProcessor::prepareToPlay (double sr, int)
@@ -69,10 +84,20 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     const int n = buffer.getNumSamples();
 
-    // LFO sinusoidal: se calcula una vez por bloque y modula un unico destino
-    const double lfoValue = std::sin (juce::MathConstants<double>::twoPi * lfoPhase);
+    // Entrada
+    buffer.applyGain (0, 0, n, inGain->load());
+    buffer.applyGain (1, 0, n, inGain->load());
+
+    // LFO: lee la forma dibujada en la fase actual (interpolacion lineal)
+    const float pos = (float) lfoPhase * (float) shapeSize;
+    const int i0 = juce::jlimit (0, shapeSize - 1, (int) pos);
+    const int i1 = (i0 + 1) % shapeSize;
+    const float frac = pos - (float) i0;
+    const float shapeV = getShapeValue (i0) + (getShapeValue (i1) - getShapeValue (i0)) * frac;
+    const float mod = lfoDepth->load() * (2.0f * shapeV - 1.0f);
+
     lfoPhase = std::fmod (lfoPhase + (double) lfoRate->load() * n / sampleRate, 1.0);
-    const float mod = lfoDepth->load() * (float) lfoValue;
+    displayPhase.store ((float) lfoPhase);
 
     GranularEngine::Params p { raw[0]->load(), raw[1]->load(), raw[2]->load(), raw[3]->load(),
                                raw[4]->load(), raw[5]->load(), raw[6]->load(), raw[7]->load() };
@@ -89,6 +114,11 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     engine.setParams (p);
     engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), n);
+
+    // Salida
+    buffer.applyGain (0, 0, n, outGain->load());
+    buffer.applyGain (1, 0, n, outGain->load());
+
     activity.store (engine.getActivity());
 }
 
@@ -101,6 +131,12 @@ void MortalProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
+
+    juce::StringArray vals;
+    for (int i = 0; i < shapeSize; ++i)
+        vals.add (juce::String (getShapeValue (i), 4));
+    xml->setAttribute ("lfoShape", vals.joinIntoString (","));
+
     copyXmlToBinary (*xml, destData);
 }
 
@@ -108,7 +144,18 @@ void MortalProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xml (getXmlFromBinary (data, sizeInBytes));
     if (xml && xml->hasTagName (apvts.state.getType()))
+    {
+        const auto shapeStr = xml->getStringAttribute ("lfoShape");
+        if (shapeStr.isNotEmpty())
+        {
+            auto parts = juce::StringArray::fromTokens (shapeStr, ",", "");
+            if (parts.size() == shapeSize)
+                for (int i = 0; i < shapeSize; ++i)
+                    setShapeValue (i, parts[i].getFloatValue());
+        }
+        xml->removeAttribute ("lfoShape");
         apvts.replaceState (juce::ValueTree::fromXml (*xml));
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
