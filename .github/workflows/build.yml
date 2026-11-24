@@ -12,7 +12,7 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -20,7 +20,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Mortal-${{ matrix.os }}
           path: build/Mortal_artefacts/Release/VST3/
