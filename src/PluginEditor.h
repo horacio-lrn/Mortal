@@ -9,8 +9,11 @@ class MortalLookAndFeel : public juce::LookAndFeel_V4
 public:
     void drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
                            float sliderPos, float startAngle, float endAngle,
-                           juce::Slider&) override
+                           juce::Slider& slider) override
     {
+        // Los knobs de tiempo se atenuan cuando SYNC esta activo
+        g.beginTransparencyLayer (slider.isEnabled() ? 1.0f : 0.35f);
+
         const juce::Colour red (0xffff2b2b);
         auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (6.0f);
         const float d = juce::jmin (bounds.getWidth(), bounds.getHeight());
@@ -44,6 +47,8 @@ public:
         g.fillEllipse (dx - 6.0f, dy - 6.0f, 12.0f, 12.0f);
         g.setColour (red);
         g.fillEllipse (dx - 3.0f, dy - 3.0f, 6.0f, 6.0f);
+
+        g.endTransparencyLayer();
     }
 
     void drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h,
@@ -92,60 +97,56 @@ private:
     using ComboAttachment  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
-    void timerCallback() override
-    {
-        phase += 0.03f;
-        repaint (devilArea);
-        shapeEditor.repaint();
-        inMeter.tick();
-        bpmLabel.setText ("Host BPM: " + juce::String (processor.getBpm(), 1), juce::dontSendNotification);
-        outMeter.tick();
-    }
+    void timerCallback() override;
+    void updateVisibility();
 
+    // divIndex: -1 = sin division; 0..5 = LFO, DELAY, GRAIN, LSD, KETAMINE, COCAINE
     void addKnob (const juce::String& paramID, const juce::String& text,
-                  int cx, int cy, int size, bool isGain = false, bool locked = false);
+                  int cx, int top, int size, int divIndex = -1,
+                  bool isGain = false, bool isDrug = false);
     void addFader (const juce::String& paramID, const juce::String& text,
                    int cx, int top, int height);
+    void addDivBox (int divIndex, int cx, int y, bool isDrug);
     void drawDevil (juce::Graphics& g, juce::Point<float> centre, float r, float act) const;
     void randomizeAll();
     void resetAll();
 
     MortalProcessor& processor;
     MortalLookAndFeel laf;
+    std::atomic<float>* syncRaw = nullptr;
+
     juce::OwnedArray<juce::Slider> sliders;
     juce::OwnedArray<juce::Label> labels;
+    juce::OwnedArray<juce::ComboBox> divBoxes;
     std::vector<std::unique_ptr<SliderAttachment>> attachments;
+    std::vector<std::unique_ptr<ComboAttachment>> divAttachments;
 
-    // Sliders que el randomizador no toca: entrada, salida, efectos y DRUGS
-    juce::Array<juce::Slider*> lockedSliders;
+    juce::Array<juce::Slider*> lockedSliders;   // el randomizador no las toca
+    juce::Array<juce::Slider*> timedSliders;    // se atenuan con SYNC
+    juce::Array<juce::Component*> drugComps;    // se ocultan con el panel DRUGS
+    juce::Array<juce::Component*> drugDivs;     // divisiones de DRUGS
 
-    // Componentes del panel DRUGS (se muestran u ocultan con su boton)
-    juce::Array<juce::Component*> drugComps;
-    juce::TextButton drugsBtn;
-    bool drugsVisible = false;
-
-    juce::ComboBox targetBox;
-    juce::Label targetLabel;
-    juce::Label shapeLabel;
     juce::ComboBox presetBox;
+    juce::ComboBox targetBox;
     juce::TextButton clearBtn;
     juce::TextButton randomBtn;
     juce::TextButton resetBtn;
     juce::TextButton lowEqBtn;
-    std::unique_ptr<ComboAttachment> targetAttach;
-    std::unique_ptr<ButtonAttachment> lowEqAttach;
-
     juce::TextButton syncBtn;
-    juce::ComboBox divBox;
+    juce::TextButton drugsBtn;
+    juce::Label targetLabel;
+    juce::Label shapeLabel;
     juce::Label bpmLabel;
-    std::unique_ptr<ButtonAttachment> syncAttach;
-    std::unique_ptr<ComboAttachment> divAttach;
 
     LevelMeter inMeter { processor.getInputLevel() };
     LevelMeter outMeter { processor.getOutputLevel() };
     LfoShapeEditor shapeEditor { processor };
 
-    juce::Rectangle<int> devilArea { 400, 115, 200, 200 };
+    std::unique_ptr<ComboAttachment> targetAttach;
+    std::unique_ptr<ButtonAttachment> lowEqAttach;
+    std::unique_ptr<ButtonAttachment> syncAttach;
+
+    bool drugsOpen = false;
     float phase = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MortalEditor)

@@ -30,7 +30,12 @@ MortalProcessor::MortalProcessor()
     ketAmt    = apvts.getRawParameterValue ("ketamine");
     cocAmt    = apvts.getRawParameterValue ("cocaine");
     syncParam = apvts.getRawParameterValue ("sync");
-    divParam  = apvts.getRawParameterValue ("division");
+    divParams[0] = apvts.getRawParameterValue ("lfodiv");
+    divParams[1] = apvts.getRawParameterValue ("delaydiv");
+    divParams[2] = apvts.getRawParameterValue ("grainsdiv");
+    divParams[3] = apvts.getRawParameterValue ("lsddiv");
+    divParams[4] = apvts.getRawParameterValue ("freezediv");
+    divParams[5] = apvts.getRawParameterValue ("stutdiv");
 
     resetShape();
 }
@@ -89,7 +94,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout MortalProcessor::createLayou
     params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "sync", 1 }, "Tempo Sync", false));
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
-        juce::ParameterID { "division", 1 }, "Division", getDivisionNames(), 3));
+        juce::ParameterID { "lfodiv", 1 }, "LFO Division", getDivisionNames(), 3));
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "delaydiv", 1 }, "Delay Division", getDivisionNames(), 6));
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "grainsdiv", 1 }, "Grain Division", getDivisionNames(), 9));
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "lsddiv", 1 }, "LSD Division", getDivisionNames(), 3));
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "freezediv", 1 }, "Ketamine Division", getDivisionNames(), 6));
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "stutdiv", 1 }, "Cocaine Division", getDivisionNames(), 9));
 
     return { params.begin(), params.end() };
 }
@@ -201,7 +216,7 @@ void MortalProcessor::processLsd (juce::AudioBuffer<float>& buffer, int n)
     const float a = lsdAmt->load();
     const int size = (int) lsdBuf[0].size();
     const double base = 0.03 * sampleRate;
-    const double r1 = syncNow ? 1.0 / divSecNow : 0.7;
+    const double r1 = syncNow ? 1.0 / secLsd : 0.7;
     const double r2 = r1 * (2.3 / 0.7);
     const double twoPi = juce::MathConstants<double>::twoPi;
 
@@ -248,7 +263,7 @@ void MortalProcessor::processFreeze (juce::AudioBuffer<float>& buffer, int n)
     if (want && ! kFrozen)
     {
         kFrozen = true;
-        kLen = juce::jlimit (4, size - 4, (int) ((syncNow ? divSecNow : 0.25) * sampleRate));
+        kLen = juce::jlimit (4, size - 4, (int) ((syncNow ? secFreeze : 0.25) * sampleRate));
         kStart = (kIdx - kLen + size) % size;
         kR = 0;
     }
@@ -300,7 +315,7 @@ void MortalProcessor::processStutter (juce::AudioBuffer<float>& buffer, int n)
         if (stCount <= 0)
         {
             // Mas amount = cortes mas cortos y mas frecuentes
-            const int sliceLen = juce::jmax (8, (int) ((syncNow ? divSecNow : 0.24 - 0.18 * (double) a) * sampleRate));
+            const int sliceLen = juce::jmax (8, (int) ((syncNow ? secStut : 0.24 - 0.18 * (double) a) * sampleRate));
             stCount = sliceLen;
             stFrag = juce::jmax (1, sliceLen / 4);
             stSrc = (stIdx - sliceLen + size) % size;
@@ -341,8 +356,14 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     bpm = juce::jlimit (20.0, 300.0, bpm);
     bpmNow.store (bpm);
 
-    syncNow   = syncParam->load() > 0.5f;
-    divSecNow = divisionBeats ((int) divParam->load()) * 60.0 / bpm;
+    syncNow = syncParam->load() > 0.5f;
+    const double beatSec = 60.0 / bpm;
+    secLfo    = divisionBeats ((int) divParams[0]->load()) * beatSec;
+    secDelay  = divisionBeats ((int) divParams[1]->load()) * beatSec;
+    secGrain  = divisionBeats ((int) divParams[2]->load()) * beatSec;
+    secLsd    = divisionBeats ((int) divParams[3]->load()) * beatSec;
+    secFreeze = divisionBeats ((int) divParams[4]->load()) * beatSec;
+    secStut   = divisionBeats ((int) divParams[5]->load()) * beatSec;
 
     // Entrada
     buffer.applyGain (0, 0, n, inGain->load());
@@ -357,11 +378,11 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const float shapeV = getShapeValue (i0) + (getShapeValue (i1) - getShapeValue (i0)) * frac;
     const float mod = lfoDepth->load() * (2.0f * shapeV - 1.0f);
 
-    const double lfoRateHz = syncNow ? 1.0 / divSecNow : (double) lfoRate->load();
+    const double lfoRateHz = syncNow ? 1.0 / secLfo : (double) lfoRate->load();
     lfoPhase = std::fmod (lfoPhase + lfoRateHz * n / sampleRate, 1.0);
     displayPhase.store ((float) lfoPhase);
 
-    GranularEngine::Params p { raw[0]->load(), (syncNow ? (float) (divSecNow * 1000.0) : raw[1]->load()), raw[2]->load(), raw[3]->load(),
+    GranularEngine::Params p { raw[0]->load(), (syncNow ? (float) (secGrain * 1000.0) : raw[1]->load()), raw[2]->load(), raw[3]->load(),
                                raw[4]->load(), raw[5]->load(), raw[6]->load(), raw[7]->load() };
 
     switch ((int) lfoTarget->load())
@@ -420,7 +441,7 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     {
         const float dLvl = delayAmt->load();
         const int lineSize = (int) dLine[0].size();
-        const int dS = juce::jlimit (1, lineSize - 2, (int) ((syncNow ? divSecNow : 0.12) * sampleRate));
+        const int dS = juce::jlimit (1, lineSize - 2, (int) ((syncNow ? secDelay : 0.12) * sampleRate));
         float* w0 = buffer.getWritePointer (0);
         float* w1 = buffer.getWritePointer (1);
 

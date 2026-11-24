@@ -79,7 +79,7 @@ private:
     std::atomic<float>* ketAmt = nullptr;
     std::atomic<float>* cocAmt = nullptr;
     std::atomic<float>* syncParam = nullptr;
-    std::atomic<float>* divParam = nullptr;
+    std::array<std::atomic<float>*, 6> divParams {};
 
     GranularEngine engine;
     std::atomic<float> activity { 0.0f };
@@ -89,7 +89,7 @@ private:
     std::atomic<float> outLevel { 0.0f };
     std::atomic<double> bpmNow { 120.0 };
     bool syncNow = false;
-    double divSecNow = 0.5;
+    double secLfo = 0.5, secDelay = 0.5, secGrain = 0.25, secLsd = 0.5, secFreeze = 0.25, secStut = 0.25;
 
     juce::Reverb reverb;
     juce::AudioBuffer<float> revBuf;

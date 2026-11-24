@@ -1,80 +1,113 @@
 #include "PluginEditor.h"
 
+namespace
+{
+    // Parametros de division: LFO, DELAY, GRAIN, LSD, KETAMINE, COCAINE
+    const char* const divIds[6] = { "lfodiv", "delaydiv", "grainsdiv", "lsddiv", "freezediv", "stutdiv" };
+
+    void drawPanel (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& title)
+    {
+        g.setColour (juce::Colour (0x66100505));
+        g.fillRoundedRectangle (r, 10.0f);
+        g.setColour (juce::Colour (0xff5a2222));
+        g.drawRoundedRectangle (r.reduced (0.5f), 10.0f, 1.0f);
+
+        if (title.isNotEmpty())
+        {
+            g.setColour (juce::Colour (0xffff2b2b));
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText (title, juce::Rectangle<float> (r.getX() + 12.0f, r.getY() + 6.0f, 200.0f, 16.0f),
+                        juce::Justification::left);
+        }
+    }
+
+    void styleButton (juce::TextButton& b, bool primary)
+    {
+        b.setColour (juce::TextButton::buttonColourId,   juce::Colour (primary ? 0xffb01c1c : 0xff3a1a1a));
+        b.setColour (juce::TextButton::buttonOnColourId, juce::Colour (primary ? 0xffff2b2b : 0xff6a2a2a));
+        b.setColour (juce::TextButton::textColourOffId,  juce::Colour (primary ? 0xffffffff : 0xffffb3b3));
+        b.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
+    }
+
+    void styleCombo (juce::ComboBox& c)
+    {
+        c.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff2a1212));
+        c.setColour (juce::ComboBox::textColourId,       juce::Colour (0xffffb3b3));
+        c.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0xff8c1111));
+        c.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffff2b2b));
+    }
+}
+
 MortalEditor::MortalEditor (MortalProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    setSize (1000, 930);
+    setSize (1000, 830);
+    syncRaw = processor.apvts.getRawParameterValue ("sync");
 
-    // Columna izquierda
-    addKnob ("position", "POSITION",   170, 120, 72);
-    addKnob ("size",     "DURATION",   170, 238, 72);
-    addKnob ("spray",    "SPRAY",      170, 356, 72);
-    addKnob ("durrnd",   "DUR RANDOM", 170, 474, 60);
-
-    // Columna derecha
-    addKnob ("density",  "DENSITY",  830, 120, 72);
-    addKnob ("pitch",    "PITCH",    830, 238, 72);
-    addKnob ("feedback", "FEEDBACK", 830, 356, 72);
-
-    // Centro
-    addKnob ("mix", "MIX", 500, 356, 84);
-
-    // Entrada y salida, en los bordes, con medidores a su lado
-    addKnob ("ingain",  "IN",  72,  240, 60, true);
-    addKnob ("outgain", "OUT", 928, 240, 60, true);
-    inMeter.setBounds (12, 120, 16, 280);
-    outMeter.setBounds (972, 120, 16, 280);
+    // Entrada y salida, en los bordes
+    addKnob ("ingain",  "IN",  66,  110, 60, -1, true);
+    addKnob ("outgain", "OUT", 930, 110, 60, -1, true);
+    inMeter.setBounds (12, 110, 16, 410);
+    outMeter.setBounds (972, 110, 16, 410);
     addAndMakeVisible (inMeter);
     addAndMakeVisible (outMeter);
 
-    // Botones centrales
+    // Panel GRAIN (izquierda)
+    addKnob ("position", "POSITION",   180, 130, 68);
+    addKnob ("size",     "DURATION",   300, 130, 68, 2);
+    addKnob ("spray",    "SPRAY",      180, 260, 68);
+    addKnob ("durrnd",   "DUR RANDOM", 300, 260, 68);
+    addKnob ("density",  "DENSITY",    180, 390, 68);
+    addKnob ("pitch",    "PITCH",      300, 390, 68);
+
+    // Panel central: devil, MIX y botones
+    addKnob ("mix", "MIX", 500, 300, 84);
+
     randomBtn.setButtonText ("RANDOMIZE");
-    randomBtn.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xffb01c1c));
-    randomBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff2b2b));
-    randomBtn.setColour (juce::TextButton::textColourOffId,  juce::Colours::white);
-    randomBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    randomBtn.setBounds (420, 446, 160, 24);
+    styleButton (randomBtn, true);
+    randomBtn.setBounds (400, 428, 200, 26);
     addAndMakeVisible (randomBtn);
     randomBtn.onClick = [this] { randomizeAll(); };
 
     resetBtn.setButtonText ("RESET DEFAULT");
-    resetBtn.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff3a1a1a));
-    resetBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff6a2a2a));
-    resetBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffffb3b3));
-    resetBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    resetBtn.setBounds (420, 478, 160, 24);
+    styleButton (resetBtn, false);
+    resetBtn.setBounds (400, 460, 200, 26);
     addAndMakeVisible (resetBtn);
     resetBtn.onClick = [this] { resetAll(); };
 
-    // Faders de efectos: delay, reverb y saturacion
-    addFader ("delay",  "DELAY",      700, 560, 130);
-    addFader ("reverb", "REVERB",     800, 560, 130);
-    addFader ("sat",    "SATURATION", 900, 560, 130);
+    syncBtn.setButtonText ("SYNC");
+    syncBtn.setClickingTogglesState (true);
+    styleButton (syncBtn, false);
+    syncBtn.setBounds (400, 494, 96, 24);
+    addAndMakeVisible (syncBtn);
+    syncAttach = std::make_unique<ButtonAttachment> (processor.apvts, "sync", syncBtn);
+    syncBtn.onClick = [this] { updateVisibility(); };
+
+    bpmLabel.setJustificationType (juce::Justification::left);
+    bpmLabel.setFont (juce::Font (11.0f, juce::Font::plain));
+    bpmLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
+    bpmLabel.setBounds (504, 497, 100, 18);
+    addAndMakeVisible (bpmLabel);
+
+    // Panel FX (derecha)
+    addKnob ("feedback", "FEEDBACK", 760, 130, 68);
+    addFader ("delay",  "DELAY",      680, 250, 130);
+    addDivBox (1, 680, 420, false);
+    addFader ("reverb", "REVERB",     760, 250, 130);
+    addFader ("sat",    "SATURATION", 840, 250, 130);
 
     lowEqBtn.setButtonText ("LOW EQ");
     lowEqBtn.setClickingTogglesState (true);
-    lowEqBtn.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff3a1a1a));
-    lowEqBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff2b2b));
-    lowEqBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffffb3b3));
-    lowEqBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    lowEqBtn.setBounds (770, 732, 60, 22);
+    styleButton (lowEqBtn, false);
+    lowEqBtn.setBounds (720, 458, 80, 22);
     addAndMakeVisible (lowEqBtn);
     lowEqAttach = std::make_unique<ButtonAttachment> (processor.apvts, "loweq", lowEqBtn);
 
-    // Seccion LFO: presets, dibujo y controles
-    shapeLabel.setText ("LFO SHAPE (dibuixa aqui)", juce::dontSendNotification);
-    shapeLabel.setFont (juce::Font (12.0f, juce::Font::bold));
-    shapeLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
-    shapeLabel.setBounds (30, 540, 260, 14);
-    addAndMakeVisible (shapeLabel);
-
+    // Panel LFO (abajo izquierda)
     presetBox.addItemList ({ "Sine", "Triangle", "Square", "Saw Up", "Saw Down", "Steps" }, 1);
     presetBox.setTextWhenNothingSelected ("Preset...");
-    presetBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff2a1212));
-    presetBox.setColour (juce::ComboBox::textColourId,       juce::Colour (0xffffb3b3));
-    presetBox.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0xff8c1111));
-    presetBox.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffff2b2b));
-    presetBox.setBounds (30, 560, 150, 24);
+    styleCombo (presetBox);
+    presetBox.setBounds (126, 584, 130, 24);
     addAndMakeVisible (presetBox);
     presetBox.onChange = [this]
     {
@@ -83,92 +116,54 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     };
 
     clearBtn.setButtonText ("CLEAR DRAW");
-    clearBtn.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff3a1a1a));
-    clearBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff6a2a2a));
-    clearBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffffb3b3));
-    clearBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    clearBtn.setBounds (190, 560, 120, 24);
+    styleButton (clearBtn, false);
+    clearBtn.setBounds (266, 584, 110, 24);
     addAndMakeVisible (clearBtn);
     clearBtn.onClick = [this] { processor.clearShape(); presetBox.setSelectedId (0, juce::dontSendNotification); };
 
-    shapeEditor.setBounds (30, 592, 440, 120);
-    addAndMakeVisible (shapeEditor);
-
-    addKnob ("lforate",  "LFO RATE",  530, 620, 60);
-    addKnob ("lfodepth", "LFO DEPTH", 620, 620, 60);
+    targetLabel.setText ("LFO TARGET", juce::dontSendNotification);
+    targetLabel.setJustificationType (juce::Justification::centred);
+    targetLabel.setFont (juce::Font (11.0f, juce::Font::bold));
+    targetLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
+    targetLabel.setBounds (400, 566, 120, 14);
+    addAndMakeVisible (targetLabel);
 
     targetBox.addItemList ({ "Position", "Density", "Pitch", "Spray", "Mix" }, 1);
-    targetBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff2a1212));
-    targetBox.setColour (juce::ComboBox::textColourId,       juce::Colour (0xffffb3b3));
-    targetBox.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0xff8c1111));
-    targetBox.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffff2b2b));
-    targetBox.setBounds (480, 718, 150, 24);
+    styleCombo (targetBox);
+    targetBox.setBounds (400, 584, 120, 24);
     addAndMakeVisible (targetBox);
     targetAttach = std::make_unique<ComboAttachment> (processor.apvts, "lfotarget", targetBox);
 
-    targetLabel.setText ("LFO TARGET", juce::dontSendNotification);
-    targetLabel.setJustificationType (juce::Justification::centred);
-    targetLabel.setFont (juce::Font (12.0f, juce::Font::bold));
-    targetLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
-    targetLabel.setBounds (480, 700, 150, 16);
-    addAndMakeVisible (targetLabel);
+    shapeLabel.setText ("LFO SHAPE (dibuixa aqui)", juce::dontSendNotification);
+    shapeLabel.setFont (juce::Font (11.0f, juce::Font::plain));
+    shapeLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
+    shapeLabel.setBounds (126, 604, 330, 14);
+    addAndMakeVisible (shapeLabel);
 
-    // Boton para mostrar u ocultar el panel DRUGS
-    drugsBtn.setButtonText ("DRUGS");
-    drugsBtn.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff3a1a1a));
-    drugsBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff2b2b));
-    drugsBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffff2b2b));
-    drugsBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    drugsBtn.setBounds (420, 780, 160, 24);
+    shapeEditor.setBounds (126, 622, 330, 130);
+    addAndMakeVisible (shapeEditor);
+
+    addKnob ("lforate",  "LFO RATE",  520, 620, 56, 0);
+    addKnob ("lfodepth", "LFO DEPTH", 600, 620, 56);
+
+    // Panel DRUGS (abajo derecha, plegable)
+    drugsBtn.setButtonText ("DRUGS  [+]");
+    styleButton (drugsBtn, true);
+    drugsBtn.setBounds (664, 562, 302, 26);
     addAndMakeVisible (drugsBtn);
     drugsBtn.onClick = [this]
     {
-        drugsVisible = ! drugsVisible;
-        for (auto* c : drugComps)
-            c->setVisible (drugsVisible);
+        drugsOpen = ! drugsOpen;
+        drugsBtn.setButtonText (drugsOpen ? "DRUGS  [-]" : "DRUGS  [+]");
+        updateVisibility();
         repaint();
     };
 
-    // Seccion DRUGS: tres knobs de 1 a 100 %, fuera del randomizador y ocultos al inicio
-    addKnob ("lsd",      "LSD",      250, 840, 64, false, true);
-    drugComps.add (sliders.getLast());
-    drugComps.add (labels.getLast());
-    addKnob ("ketamine", "KETAMINE", 500, 840, 64, false, true);
-    drugComps.add (sliders.getLast());
-    drugComps.add (labels.getLast());
-    addKnob ("cocaine",  "COCAINE",  750, 840, 64, false, true);
-    drugComps.add (sliders.getLast());
-    drugComps.add (labels.getLast());
+    addKnob ("lsd",      "LSD",      730, 620, 60, 3, false, true);
+    addKnob ("ketamine", "KETAMINE", 815, 620, 60, 4, false, true);
+    addKnob ("cocaine",  "COCAINE",  900, 620, 60, 5, false, true);
 
-    for (auto* c : drugComps)
-        c->setVisible (false);
-
-    // Sincronia con el tempo del proyecto
-    syncBtn.setButtonText ("SYNC");
-    syncBtn.setClickingTogglesState (true);
-    syncBtn.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff3a1a1a));
-    syncBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff2b2b));
-    syncBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffffb3b3));
-    syncBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-    syncBtn.setBounds (420, 510, 70, 24);
-    addAndMakeVisible (syncBtn);
-    syncAttach = std::make_unique<ButtonAttachment> (processor.apvts, "sync", syncBtn);
-
-    divBox.addItemList (MortalProcessor::getDivisionNames(), 1);
-    divBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff2a1212));
-    divBox.setColour (juce::ComboBox::textColourId,       juce::Colour (0xffffb3b3));
-    divBox.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0xff8c1111));
-    divBox.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffff2b2b));
-    divBox.setBounds (500, 510, 80, 24);
-    addAndMakeVisible (divBox);
-    divAttach = std::make_unique<ComboAttachment> (processor.apvts, "division", divBox);
-
-    bpmLabel.setJustificationType (juce::Justification::centred);
-    bpmLabel.setFont (juce::Font (11.0f, juce::Font::plain));
-    bpmLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
-    bpmLabel.setBounds (420, 538, 160, 14);
-    addAndMakeVisible (bpmLabel);
-
+    updateVisibility();
     startTimerHz (30);
 }
 
@@ -178,8 +173,35 @@ MortalEditor::~MortalEditor()
     for (auto* s : sliders) s->setLookAndFeel (nullptr);
 }
 
+void MortalEditor::timerCallback()
+{
+    phase += 0.03f;
+    repaint (juce::Rectangle<int> (380, 100, 240, 230));
+    shapeEditor.repaint();
+    inMeter.tick();
+    outMeter.tick();
+    bpmLabel.setText (juce::String (processor.getBpm(), 1) + " BPM", juce::dontSendNotification);
+    updateVisibility();
+}
+
+// Con SYNC activo: aparecen las divisiones y se atenuan los knobs de tiempo.
+// Con SYNC apagado: solo se ven los knobs, como antes.
+void MortalEditor::updateVisibility()
+{
+    const bool sync = syncRaw->load() > 0.5f;
+
+    for (auto* c : drugComps)
+        c->setVisible (drugsOpen);
+
+    for (auto* b : divBoxes)
+        b->setVisible (sync && (! drugDivs.contains (b) || drugsOpen));
+
+    for (auto* s : timedSliders)
+        s->setEnabled (! sync);
+}
+
 void MortalEditor::addKnob (const juce::String& paramID, const juce::String& text,
-                            int cx, int cy, int size, bool isGain, bool locked)
+                            int cx, int top, int size, int divIndex, bool isGain, bool isDrug)
 {
     auto* s = sliders.add (new juce::Slider());
     s->setSliderStyle (juce::Slider::RotaryVerticalDrag);
@@ -212,21 +234,30 @@ void MortalEditor::addKnob (const juce::String& paramID, const juce::String& tex
         };
     }
 
-    if (isGain || locked)
-        lockedSliders.add (s);
+    if (isGain || isDrug) lockedSliders.add (s);
+    if (divIndex >= 0)    timedSliders.add (s);
 
     s->setLookAndFeel (&laf);
-    s->setBounds (cx - size / 2, cy - size / 2, size, size + 18);
+    s->setBounds (cx - size / 2, top, size, size + 18);
     addAndMakeVisible (s);
 
     auto* l = labels.add (new juce::Label ({}, text));
     l->setJustificationType (juce::Justification::centred);
-    l->setFont (juce::Font (12.0f, juce::Font::bold));
+    l->setFont (juce::Font (11.0f, juce::Font::bold));
     l->setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
-    l->setBounds (cx - 55, cy + size / 2 + 20, 110, 16);
+    l->setBounds (cx - 38, top + size + 20, 76, 16);
     addAndMakeVisible (l);
 
     attachments.push_back (std::make_unique<SliderAttachment> (processor.apvts, paramID, *s));
+
+    if (divIndex >= 0)
+        addDivBox (divIndex, cx, top + size + 38, isDrug);
+
+    if (isDrug)
+    {
+        drugComps.add (s);
+        drugComps.add (l);
+    }
 }
 
 void MortalEditor::addFader (const juce::String& paramID, const juce::String& text,
@@ -255,12 +286,25 @@ void MortalEditor::addFader (const juce::String& paramID, const juce::String& te
 
     auto* l = labels.add (new juce::Label ({}, text));
     l->setJustificationType (juce::Justification::centred);
-    l->setFont (juce::Font (12.0f, juce::Font::bold));
+    l->setFont (juce::Font (11.0f, juce::Font::bold));
     l->setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
-    l->setBounds (cx - 55, top + height + 20, 110, 16);
+    l->setBounds (cx - 38, top + height + 20, 76, 16);
     addAndMakeVisible (l);
 
     attachments.push_back (std::make_unique<SliderAttachment> (processor.apvts, paramID, *s));
+}
+
+void MortalEditor::addDivBox (int divIndex, int cx, int y, bool isDrug)
+{
+    auto* box = divBoxes.add (new juce::ComboBox());
+    box->addItemList (MortalProcessor::getDivisionNames(), 1);
+    styleCombo (*box);
+    box->setBounds (cx - 45, y, 90, 22);
+    addAndMakeVisible (box);
+    divAttachments.push_back (std::make_unique<ComboAttachment> (processor.apvts, divIds[divIndex], *box));
+
+    if (isDrug)
+        drugDivs.add (box);
 }
 
 void MortalEditor::randomizeAll()
@@ -389,43 +433,42 @@ void MortalEditor::drawDevil (juce::Graphics& g, juce::Point<float> c, float r, 
 
 void MortalEditor::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
-    juce::ColourGradient bg (juce::Colour (0xff2e1818), 0.0f, 0.0f,
-                             juce::Colour (0xff140909), 0.0f, bounds.getHeight(), false);
-    g.setGradientFill (bg);
+    // Fondo
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2e1818), 0.0f, 0.0f,
+                                             juce::Colour (0xff140909), 0.0f, (float) getHeight(), false));
     g.fillAll();
 
+    // Cabecera
     g.setColour (juce::Colour (0xffff2b2b));
-    g.setFont (juce::Font (32.0f, juce::Font::plain));
-    g.drawText ("MORTAL", juce::Rectangle<int> (0, 12, getWidth(), 44), juce::Justification::centred);
+    g.setFont (juce::Font (30.0f, juce::Font::plain));
+    g.drawText ("MORTAL", juce::Rectangle<int> (0, 12, getWidth(), 36), juce::Justification::centred);
 
-    g.setColour (juce::Colour (0xffb06060));
-    g.setFont (juce::Font (12.0f, juce::Font::plain));
-    g.drawText ("GRANULAR FX", juce::Rectangle<int> (0, 58, getWidth(), 16), juce::Justification::centred);
-
-    // Textos de la esquina superior derecha
     g.setColour (juce::Colour (0xffb06060));
     g.setFont (juce::Font (11.0f, juce::Font::plain));
+    g.drawText ("GRANULAR FX", juce::Rectangle<int> (0, 50, getWidth(), 14), juce::Justification::centred);
+
     g.drawText ("alabeu al hippie mal vestit",
                 juce::Rectangle<int> (480, 10, getWidth() - 490, 14), juce::Justification::right);
     g.drawText ("distribuiu aquest plugin amb seny, que de cervell no en venen",
                 juce::Rectangle<int> (480, 26, getWidth() - 490, 14), juce::Justification::right);
 
-    // Texto de la esquina inferior derecha
-    g.drawText ("Ningu es fa responsable d'aquest plugin",
-                juce::Rectangle<int> (480, 912, getWidth() - 490, 14), juce::Justification::right);
+    g.setColour (juce::Colour (0xff5a2222));
+    g.drawHorizontalLine (74, 20.0f, 980.0f);
 
+    // Paneles
+    drawPanel (g, { 110.0f, 90.0f, 260.0f, 450.0f }, "GRAIN");
+    drawPanel (g, { 380.0f, 90.0f, 240.0f, 450.0f }, "");
+    drawPanel (g, { 630.0f, 90.0f, 260.0f, 450.0f }, "FX");
+    drawPanel (g, { 110.0f, 556.0f, 530.0f, 234.0f }, "LFO");
+    drawPanel (g, { 650.0f, 556.0f, 330.0f, drugsOpen ? 234.0f : 40.0f }, "");
+
+    // Devil
     const float act = juce::jlimit (0.0f, 1.0f, processor.getActivity() * 1.5f);
-    const auto centre = devilArea.toFloat().getCentre();
-    drawDevil (g, centre, 80.0f, act);
+    drawDevil (g, { 500.0f, 200.0f }, 62.0f, act);
 
-    // Panel DRUGS (solo cuando esta desplegado)
-    if (drugsVisible)
-    {
-        auto panel = juce::Rectangle<float> (20.0f, 774.0f, 960.0f, 150.0f);
-        g.setColour (juce::Colour (0x66100505));
-        g.fillRoundedRectangle (panel, 10.0f);
-        g.setColour (juce::Colour (0xff6a2a2a));
-        g.drawRoundedRectangle (panel, 10.0f, 1.0f);
-    }
+    // Pie
+    g.setColour (juce::Colour (0xffb06060));
+    g.setFont (juce::Font (11.0f, juce::Font::plain));
+    g.drawText ("Ningu es fa responsable d'aquest plugin",
+                juce::Rectangle<int> (480, 806, getWidth() - 490, 14), juce::Justification::right);
 }
