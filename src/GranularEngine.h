@@ -27,7 +27,7 @@ public:
     {
         if (bufferSize == 0) return;
 
-        const double baseLen = juce::jlimit (5.0, 500.0, (double) params.size) * 0.001 * sampleRate;
+        const double baseLen = juce::jlimit (5.0, 4000.0, (double) params.size) * 0.001 * sampleRate;
         const double interval = sampleRate / juce::jmax (1.0, (double) params.density);
         const double ratio = std::pow (2.0, params.pitch / 12.0);
         const float minDelay = (float) (0.02 * sampleRate);
@@ -119,7 +119,7 @@ private:
 
             // Duracion propia de cada grano: la base mas una variacion aleatoria
             const double durMul = 1.0 + (double) (rnd.nextFloat() * 2.0f - 1.0f) * (double) params.durRnd;
-            const double len = juce::jlimit (0.005 * sampleRate, 0.5 * sampleRate, baseLen * durMul);
+            const double len = juce::jlimit (0.005 * sampleRate, 4.0 * sampleRate, baseLen * durMul);
 
             const float pan = (rnd.nextFloat() * 2.0f - 1.0f) * spray;
             const float angle = (pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f;

@@ -98,6 +98,7 @@ private:
         repaint (devilArea);
         shapeEditor.repaint();
         inMeter.tick();
+        bpmLabel.setText ("Host BPM: " + juce::String (processor.getBpm(), 1), juce::dontSendNotification);
         outMeter.tick();
     }
 
@@ -133,6 +134,12 @@ private:
     juce::TextButton lowEqBtn;
     std::unique_ptr<ComboAttachment> targetAttach;
     std::unique_ptr<ButtonAttachment> lowEqAttach;
+
+    juce::TextButton syncBtn;
+    juce::ComboBox divBox;
+    juce::Label bpmLabel;
+    std::unique_ptr<ButtonAttachment> syncAttach;
+    std::unique_ptr<ComboAttachment> divAttach;
 
     LevelMeter inMeter { processor.getInputLevel() };
     LevelMeter outMeter { processor.getOutputLevel() };

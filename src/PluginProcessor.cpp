@@ -29,6 +29,8 @@ MortalProcessor::MortalProcessor()
     lsdAmt    = apvts.getRawParameterValue ("lsd");
     ketAmt    = apvts.getRawParameterValue ("ketamine");
     cocAmt    = apvts.getRawParameterValue ("cocaine");
+    syncParam = apvts.getRawParameterValue ("sync");
+    divParam  = apvts.getRawParameterValue ("division");
 
     resetShape();
 }
@@ -84,7 +86,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout MortalProcessor::createLayou
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "cocaine", 1 }, "Cocaine (Stutter)", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "sync", 1 }, "Tempo Sync", false));
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "division", 1 }, "Division", getDivisionNames(), 3));
+
     return { params.begin(), params.end() };
+}
+
+juce::StringArray MortalProcessor::getDivisionNames()
+{
+    return { "1/1", "1/2", "1/4.", "1/4", "1/8.", "1/6", "1/8", "1/16.", "1/12", "1/16", "1/24", "1/32" };
+}
+
+// Duracion de cada division en negras (1 negra = 1/4 de compas).
+// Las etiquetas son fracciones de compas: 1/4 = una negra, 1/6 = un tresillo de negra.
+double MortalProcessor::divisionBeats (int index) noexcept
+{
+    static constexpr double beats[] = { 4.0, 2.0, 1.5, 1.0, 0.75, 4.0 / 6.0, 0.5, 0.375,
+                                        4.0 / 12.0, 0.25, 4.0 / 24.0, 0.125 };
+    return beats[juce::jlimit (0, 11, index)];
 }
 
 void MortalProcessor::applyShapePreset (int presetIndex) noexcept
@@ -141,7 +162,7 @@ void MortalProcessor::prepareToPlay (double sr, int samplesPerBlock)
     hpX1[0] = hpX1[1] = hpY1[0] = hpY1[1] = 0.0f;
 
     // Delay: 120 ms, linea de hasta 500 ms
-    const int delayLineSize = (int) (sr * 0.5) + 2;
+    const int delayLineSize = (int) (sr * 4.5) + 2;
     for (auto& line : dLine)
         line.assign ((size_t) delayLineSize, 0.0f);
     dIdx = 0;
@@ -150,7 +171,7 @@ void MortalProcessor::prepareToPlay (double sr, int samplesPerBlock)
     dLpState[0] = dLpState[1] = 0.0f;
 
     // Buffers de los efectos de DRUGS (2 segundos cada uno)
-    const int fxSize = (int) (sr * 2.0) + 4;
+    const int fxSize = (int) (sr * 4.5) + 4;
     for (int ch = 0; ch < 2; ++ch)
     {
         lsdBuf[ch].assign ((size_t) fxSize, 0.0f);
@@ -180,14 +201,16 @@ void MortalProcessor::processLsd (juce::AudioBuffer<float>& buffer, int n)
     const float a = lsdAmt->load();
     const int size = (int) lsdBuf[0].size();
     const double base = 0.03 * sampleRate;
+    const double r1 = syncNow ? 1.0 / divSecNow : 0.7;
+    const double r2 = r1 * (2.3 / 0.7);
     const double twoPi = juce::MathConstants<double>::twoPi;
 
     float* w[2] = { buffer.getWritePointer (0), buffer.getWritePointer (1) };
 
     for (int i = 0; i < n; ++i)
     {
-        lsdPh1 = std::fmod (lsdPh1 + twoPi * 0.7 / sampleRate, twoPi);
-        lsdPh2 = std::fmod (lsdPh2 + twoPi * 2.3 / sampleRate, twoPi);
+        lsdPh1 = std::fmod (lsdPh1 + twoPi * r1 / sampleRate, twoPi);
+        lsdPh2 = std::fmod (lsdPh2 + twoPi * r2 / sampleRate, twoPi);
 
         const double off = base + (double) a * (0.015 * sampleRate * std::sin (lsdPh1)
                                               + 0.008 * sampleRate * std::sin (lsdPh2));
@@ -225,6 +248,7 @@ void MortalProcessor::processFreeze (juce::AudioBuffer<float>& buffer, int n)
     if (want && ! kFrozen)
     {
         kFrozen = true;
+        kLen = juce::jlimit (4, size - 4, (int) ((syncNow ? divSecNow : 0.25) * sampleRate));
         kStart = (kIdx - kLen + size) % size;
         kR = 0;
     }
@@ -276,7 +300,7 @@ void MortalProcessor::processStutter (juce::AudioBuffer<float>& buffer, int n)
         if (stCount <= 0)
         {
             // Mas amount = cortes mas cortos y mas frecuentes
-            const int sliceLen = juce::jmax (8, (int) (sampleRate * (0.24 - 0.18 * (double) a)));
+            const int sliceLen = juce::jmax (8, (int) ((syncNow ? divSecNow : 0.24 - 0.18 * (double) a) * sampleRate));
             stCount = sliceLen;
             stFrag = juce::jmax (1, sliceLen / 4);
             stSrc = (stIdx - sliceLen + size) % size;
@@ -308,6 +332,18 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     const int n = buffer.getNumSamples();
 
+    // Tempo: BPM del proyecto (si el host no lo envia, usa 120 BPM)
+    double bpm = 120.0;
+    if (auto* ph = getPlayHead())
+        if (auto info = ph->getPosition())
+            if (auto hostBpm = info->getBpm())
+                bpm = *hostBpm;
+    bpm = juce::jlimit (20.0, 300.0, bpm);
+    bpmNow.store (bpm);
+
+    syncNow   = syncParam->load() > 0.5f;
+    divSecNow = divisionBeats ((int) divParam->load()) * 60.0 / bpm;
+
     // Entrada
     buffer.applyGain (0, 0, n, inGain->load());
     buffer.applyGain (1, 0, n, inGain->load());
@@ -321,10 +357,11 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const float shapeV = getShapeValue (i0) + (getShapeValue (i1) - getShapeValue (i0)) * frac;
     const float mod = lfoDepth->load() * (2.0f * shapeV - 1.0f);
 
-    lfoPhase = std::fmod (lfoPhase + (double) lfoRate->load() * n / sampleRate, 1.0);
+    const double lfoRateHz = syncNow ? 1.0 / divSecNow : (double) lfoRate->load();
+    lfoPhase = std::fmod (lfoPhase + lfoRateHz * n / sampleRate, 1.0);
     displayPhase.store ((float) lfoPhase);
 
-    GranularEngine::Params p { raw[0]->load(), raw[1]->load(), raw[2]->load(), raw[3]->load(),
+    GranularEngine::Params p { raw[0]->load(), (syncNow ? (float) (divSecNow * 1000.0) : raw[1]->load()), raw[2]->load(), raw[3]->load(),
                                raw[4]->load(), raw[5]->load(), raw[6]->load(), raw[7]->load() };
 
     switch ((int) lfoTarget->load())
@@ -383,12 +420,13 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     {
         const float dLvl = delayAmt->load();
         const int lineSize = (int) dLine[0].size();
+        const int dS = juce::jlimit (1, lineSize - 2, (int) ((syncNow ? divSecNow : 0.12) * sampleRate));
         float* w0 = buffer.getWritePointer (0);
         float* w1 = buffer.getWritePointer (1);
 
         for (int i = 0; i < n; ++i)
         {
-            const int rd = (dIdx - dSamples + lineSize) % lineSize;
+            const int rd = (dIdx - dS + lineSize) % lineSize;
 
             const float d0 = dLine[0][(size_t) rd];
             const float d1 = dLine[1][(size_t) rd];

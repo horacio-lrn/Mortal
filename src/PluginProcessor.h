@@ -48,6 +48,8 @@ public:
     void resetShape() noexcept;                       // sinusoide por defecto
     void clearShape() noexcept { applyShapePreset (-1); }
     float getLfoPhase() const noexcept { return displayPhase.load(); }
+    double getBpm() const noexcept { return bpmNow.load(); }
+    static juce::StringArray getDivisionNames();
 
     // Niveles para los medidores
     const std::atomic<float>& getInputLevel() const noexcept { return inLevel; }
@@ -57,6 +59,7 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
+    static double divisionBeats (int index) noexcept;
 
     void processLsd (juce::AudioBuffer<float>& buffer, int n);
     void processFreeze (juce::AudioBuffer<float>& buffer, int n);
@@ -75,6 +78,8 @@ private:
     std::atomic<float>* lsdAmt = nullptr;
     std::atomic<float>* ketAmt = nullptr;
     std::atomic<float>* cocAmt = nullptr;
+    std::atomic<float>* syncParam = nullptr;
+    std::atomic<float>* divParam = nullptr;
 
     GranularEngine engine;
     std::atomic<float> activity { 0.0f };
@@ -82,6 +87,9 @@ private:
     std::array<std::atomic<float>, shapeSize> shape;
     std::atomic<float> inLevel { 0.0f };
     std::atomic<float> outLevel { 0.0f };
+    std::atomic<double> bpmNow { 120.0 };
+    bool syncNow = false;
+    double divSecNow = 0.5;
 
     juce::Reverb reverb;
     juce::AudioBuffer<float> revBuf;

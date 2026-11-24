@@ -143,6 +143,32 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     for (auto* c : drugComps)
         c->setVisible (false);
 
+    // Sincronia con el tempo del proyecto
+    syncBtn.setButtonText ("SYNC");
+    syncBtn.setClickingTogglesState (true);
+    syncBtn.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff3a1a1a));
+    syncBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff2b2b));
+    syncBtn.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xffffb3b3));
+    syncBtn.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
+    syncBtn.setBounds (420, 510, 70, 24);
+    addAndMakeVisible (syncBtn);
+    syncAttach = std::make_unique<ButtonAttachment> (processor.apvts, "sync", syncBtn);
+
+    divBox.addItemList (MortalProcessor::getDivisionNames(), 1);
+    divBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff2a1212));
+    divBox.setColour (juce::ComboBox::textColourId,       juce::Colour (0xffffb3b3));
+    divBox.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0xff8c1111));
+    divBox.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffff2b2b));
+    divBox.setBounds (500, 510, 80, 24);
+    addAndMakeVisible (divBox);
+    divAttach = std::make_unique<ComboAttachment> (processor.apvts, "division", divBox);
+
+    bpmLabel.setJustificationType (juce::Justification::centred);
+    bpmLabel.setFont (juce::Font (11.0f, juce::Font::plain));
+    bpmLabel.setColour (juce::Label::textColourId, juce::Colour (0xffd0a0a0));
+    bpmLabel.setBounds (420, 538, 160, 14);
+    addAndMakeVisible (bpmLabel);
+
     startTimerHz (30);
 }
 
