@@ -36,6 +36,8 @@ MortalProcessor::MortalProcessor()
     divParams[3] = apvts.getRawParameterValue ("lsddiv");
     divParams[4] = apvts.getRawParameterValue ("freezediv");
     divParams[5] = apvts.getRawParameterValue ("stutdiv");
+    divParams[6] = apvts.getRawParameterValue ("flangediv");
+    flangerAmt   = apvts.getRawParameterValue ("flanger");
 
     resetShape();
 }
@@ -105,6 +107,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout MortalProcessor::createLayou
         juce::ParameterID { "freezediv", 1 }, "Ketamine Division", getDivisionNames(), 6));
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { "stutdiv", 1 }, "Cocaine Division", getDivisionNames(), 9));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "flanger", 1 }, "Flanger", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "flangediv", 1 }, "Flanger Division", getDivisionNames(), 6));
 
     return { params.begin(), params.end() };
 }
@@ -207,6 +214,12 @@ void MortalProcessor::prepareToPlay (double sr, int samplesPerBlock)
     stSrc = 0;
     stPhase = 0;
     stFrag = 1;
+
+    const int flSize = (int) (sr * 0.05) + 4;
+    for (auto& b : flBuf)
+        b.assign ((size_t) flSize, 0.0f);
+    flIdx = 0;
+    flPh = 0.0;
 }
 
 // LSD: la lectura de la linea de retardo se mueve con dos senos lentos.
@@ -216,7 +229,7 @@ void MortalProcessor::processLsd (juce::AudioBuffer<float>& buffer, int n)
     const float a = lsdAmt->load();
     const int size = (int) lsdBuf[0].size();
     const double base = 0.03 * sampleRate;
-    const double r1 = syncNow ? 1.0 / secLsd : 0.7;
+    const double r1 = 1.0 / secLsd;
     const double r2 = r1 * (2.3 / 0.7);
     const double twoPi = juce::MathConstants<double>::twoPi;
 
@@ -263,7 +276,7 @@ void MortalProcessor::processFreeze (juce::AudioBuffer<float>& buffer, int n)
     if (want && ! kFrozen)
     {
         kFrozen = true;
-        kLen = juce::jlimit (4, size - 4, (int) ((syncNow ? secFreeze : 0.25) * sampleRate));
+        kLen = juce::jlimit (4, size - 4, (int) (secFreeze * sampleRate));
         kStart = (kIdx - kLen + size) % size;
         kR = 0;
     }
@@ -315,7 +328,7 @@ void MortalProcessor::processStutter (juce::AudioBuffer<float>& buffer, int n)
         if (stCount <= 0)
         {
             // Mas amount = cortes mas cortos y mas frecuentes
-            const int sliceLen = juce::jmax (8, (int) ((syncNow ? secStut : 0.24 - 0.18 * (double) a) * sampleRate));
+            const int sliceLen = juce::jmax (8, (int) (secStut * sampleRate));
             stCount = sliceLen;
             stFrag = juce::jmax (1, sliceLen / 4);
             stSrc = (stIdx - sliceLen + size) % size;
@@ -335,6 +348,40 @@ void MortalProcessor::processStutter (juce::AudioBuffer<float>& buffer, int n)
         stIdx = (stIdx + 1) % size;
         stPhase++;
         stCount--;
+    }
+}
+
+// FLANGER: linea de retardo de 2 a 4 ms modulada por un seno cuya velocidad es la fraccion elegida.
+// La realimentacion suave da el barrido caracteristico de los comb filters.
+void MortalProcessor::processFlanger (juce::AudioBuffer<float>& buffer, int n)
+{
+    const float a = flangerAmt->load();
+    const int size = (int) flBuf[0].size();
+    const double twoPi = juce::MathConstants<double>::twoPi;
+    const double rateHz = 1.0 / juce::jmax (0.01, secFlange);
+    float* w[2] = { buffer.getWritePointer (0), buffer.getWritePointer (1) };
+
+    for (int i = 0; i < n; ++i)
+    {
+        flPh = std::fmod (flPh + twoPi * rateHz / sampleRate, twoPi);
+        const double delaySamples = (3.0 + 1.0 * std::sin (flPh)) * 0.001 * sampleRate;
+
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const float x = w[ch][i];
+
+            double rp = (double) flIdx - delaySamples;
+            while (rp < 0.0) rp += size;
+            const int i0 = (int) rp % size;
+            const int i1 = (i0 + 1) % size;
+            const float fr = (float) (rp - std::floor (rp));
+            const float wet = flBuf[ch][(size_t) i0] + (flBuf[ch][(size_t) i1] - flBuf[ch][(size_t) i0]) * fr;
+
+            flBuf[ch][(size_t) flIdx] = x + wet * 0.5f;
+            w[ch][i] = x * (1.0f - 0.5f * a) + wet * 0.5f * a;
+        }
+
+        flIdx = (flIdx + 1) % size;
     }
 }
 
@@ -364,6 +411,7 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     secLsd    = divisionBeats ((int) divParams[3]->load()) * beatSec;
     secFreeze = divisionBeats ((int) divParams[4]->load()) * beatSec;
     secStut   = divisionBeats ((int) divParams[5]->load()) * beatSec;
+    secFlange = divisionBeats ((int) divParams[6]->load()) * beatSec;
 
     // Entrada
     buffer.applyGain (0, 0, n, inGain->load());
@@ -402,6 +450,7 @@ void MortalProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     processLsd (buffer, n);
     processFreeze (buffer, n);
     processStutter (buffer, n);
+    processFlanger (buffer, n);
 
     // Reverb de placa grande (mas sutil), con LOW EQ opcional sobre la cola
     const float revLevel = reverbAmt->load() * 0.35f;

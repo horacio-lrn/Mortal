@@ -3,7 +3,7 @@
 namespace
 {
     // Parametros de division: LFO, DELAY, GRAIN, LSD, KETAMINE, COCAINE
-    const char* const divIds[6] = { "lfodiv", "delaydiv", "grainsdiv", "lsddiv", "freezediv", "stutdiv" };
+    const char* const divIds[7] = { "lfodiv", "delaydiv", "grainsdiv", "lsddiv", "freezediv", "stutdiv", "flangediv" };
 
     void drawPanel (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& title)
     {
@@ -90,16 +90,17 @@ MortalEditor::MortalEditor (MortalProcessor& p)
     addAndMakeVisible (bpmLabel);
 
     // Panel FX (derecha)
-    addKnob ("feedback", "FEEDBACK", 760, 130, 68);
-    addFader ("delay",  "DELAY",      680, 250, 130);
-    addDivBox (1, 680, 420, false);
-    addFader ("reverb", "REVERB",     760, 250, 130);
-    addFader ("sat",    "SATURATION", 840, 250, 130);
+    addKnob ("feedback", "FEEDBACK", 700, 130, 68);
+    addKnob ("flanger",  "FLANGER",  840, 130, 68, 6, false, false, true);
+    addFader ("delay",  "DELAY",      680, 296, 100);
+    addDivBox (1, 680, 436, false);
+    addFader ("reverb", "REVERB",     760, 296, 100);
+    addFader ("sat",    "SATURATION", 840, 296, 100);
 
     lowEqBtn.setButtonText ("LOW EQ");
     lowEqBtn.setClickingTogglesState (true);
     styleButton (lowEqBtn, false);
-    lowEqBtn.setBounds (720, 458, 80, 22);
+    lowEqBtn.setBounds (720, 468, 80, 22);
     addAndMakeVisible (lowEqBtn);
     lowEqAttach = std::make_unique<ButtonAttachment> (processor.apvts, "loweq", lowEqBtn);
 
@@ -194,14 +195,18 @@ void MortalEditor::updateVisibility()
         c->setVisible (drugsOpen);
 
     for (auto* b : divBoxes)
-        b->setVisible (sync && (! drugDivs.contains (b) || drugsOpen));
+    {
+        if (alwaysDivs.contains (b))    b->setVisible (true);
+        else if (drugDivs.contains (b)) b->setVisible (drugsOpen);
+        else                            b->setVisible (sync);
+    }
 
     for (auto* s : timedSliders)
         s->setEnabled (! sync);
 }
 
 void MortalEditor::addKnob (const juce::String& paramID, const juce::String& text,
-                            int cx, int top, int size, int divIndex, bool isGain, bool isDrug)
+                            int cx, int top, int size, int divIndex, bool isGain, bool isDrug, bool alwaysDiv)
 {
     auto* s = sliders.add (new juce::Slider());
     s->setSliderStyle (juce::Slider::RotaryVerticalDrag);
@@ -234,8 +239,8 @@ void MortalEditor::addKnob (const juce::String& paramID, const juce::String& tex
         };
     }
 
-    if (isGain || isDrug) lockedSliders.add (s);
-    if (divIndex >= 0)    timedSliders.add (s);
+    if (isGain || isDrug || alwaysDiv) lockedSliders.add (s);
+    if (divIndex >= 0 && ! isDrug && ! alwaysDiv) timedSliders.add (s);
 
     s->setLookAndFeel (&laf);
     s->setBounds (cx - size / 2, top, size, size + 18);
@@ -251,7 +256,8 @@ void MortalEditor::addKnob (const juce::String& paramID, const juce::String& tex
     attachments.push_back (std::make_unique<SliderAttachment> (processor.apvts, paramID, *s));
 
     if (divIndex >= 0)
-        addDivBox (divIndex, cx, top + size + 38, isDrug);
+        if (alwaysDiv) alwaysDivs.add (addDivBox (divIndex, cx, top + size + 38, isDrug));
+        else           addDivBox (divIndex, cx, top + size + 38, isDrug);
 
     if (isDrug)
     {
@@ -294,7 +300,7 @@ void MortalEditor::addFader (const juce::String& paramID, const juce::String& te
     attachments.push_back (std::make_unique<SliderAttachment> (processor.apvts, paramID, *s));
 }
 
-void MortalEditor::addDivBox (int divIndex, int cx, int y, bool isDrug)
+juce::ComboBox* MortalEditor::addDivBox (int divIndex, int cx, int y, bool isDrug)
 {
     auto* box = divBoxes.add (new juce::ComboBox());
     box->addItemList (MortalProcessor::getDivisionNames(), 1);
@@ -305,6 +311,8 @@ void MortalEditor::addDivBox (int divIndex, int cx, int y, bool isDrug)
 
     if (isDrug)
         drugDivs.add (box);
+
+    return box;
 }
 
 void MortalEditor::randomizeAll()

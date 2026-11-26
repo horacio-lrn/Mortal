@@ -64,6 +64,7 @@ private:
     void processLsd (juce::AudioBuffer<float>& buffer, int n);
     void processFreeze (juce::AudioBuffer<float>& buffer, int n);
     void processStutter (juce::AudioBuffer<float>& buffer, int n);
+    void processFlanger (juce::AudioBuffer<float>& buffer, int n);
 
     std::array<std::atomic<float>*, 8> raw {};
     std::atomic<float>* lfoRate = nullptr;
@@ -79,7 +80,8 @@ private:
     std::atomic<float>* ketAmt = nullptr;
     std::atomic<float>* cocAmt = nullptr;
     std::atomic<float>* syncParam = nullptr;
-    std::array<std::atomic<float>*, 6> divParams {};
+    std::array<std::atomic<float>*, 7> divParams {};
+    std::atomic<float>* flangerAmt = nullptr;
 
     GranularEngine engine;
     std::atomic<float> activity { 0.0f };
@@ -89,7 +91,12 @@ private:
     std::atomic<float> outLevel { 0.0f };
     std::atomic<double> bpmNow { 120.0 };
     bool syncNow = false;
-    double secLfo = 0.5, secDelay = 0.5, secGrain = 0.25, secLsd = 0.5, secFreeze = 0.25, secStut = 0.25;
+    double secLfo = 0.5, secDelay = 0.5, secGrain = 0.25, secLsd = 0.5, secFreeze = 0.25, secStut = 0.25, secFlange = 0.25;
+
+    // FLANGER: linea de retardo corta
+    std::vector<float> flBuf[2];
+    int flIdx = 0;
+    double flPh = 0.0;
 
     juce::Reverb reverb;
     juce::AudioBuffer<float> revBuf;

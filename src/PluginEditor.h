@@ -103,10 +103,10 @@ private:
     // divIndex: -1 = sin division; 0..5 = LFO, DELAY, GRAIN, LSD, KETAMINE, COCAINE
     void addKnob (const juce::String& paramID, const juce::String& text,
                   int cx, int top, int size, int divIndex = -1,
-                  bool isGain = false, bool isDrug = false);
+                  bool isGain = false, bool isDrug = false, bool alwaysDiv = false);
     void addFader (const juce::String& paramID, const juce::String& text,
                    int cx, int top, int height);
-    void addDivBox (int divIndex, int cx, int y, bool isDrug);
+    juce::ComboBox* addDivBox (int divIndex, int cx, int y, bool isDrug);
     void drawDevil (juce::Graphics& g, juce::Point<float> centre, float r, float act) const;
     void randomizeAll();
     void resetAll();
@@ -124,7 +124,8 @@ private:
     juce::Array<juce::Slider*> lockedSliders;   // el randomizador no las toca
     juce::Array<juce::Slider*> timedSliders;    // se atenuan con SYNC
     juce::Array<juce::Component*> drugComps;    // se ocultan con el panel DRUGS
-    juce::Array<juce::Component*> drugDivs;     // divisiones de DRUGS
+    juce::Array<juce::Component*> drugDivs;
+    juce::Array<juce::Component*> alwaysDivs;   // divisiones fijas (DRUGS y FLANGER): siempre visibles     // divisiones de DRUGS
 
     juce::ComboBox presetBox;
     juce::ComboBox targetBox;
